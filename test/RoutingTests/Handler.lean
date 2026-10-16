@@ -61,6 +61,12 @@ does with a request's target. -/
 private def served (link : String) : List String :=
   ((Std.Http.RequestTarget.parse? link).map (·.path.toDecodedSegments.toList)).getD []
 
+private def literalRoundTrips (s : String) (h : dotSegment s = false := by decide) : Bool :=
+  dispatch [.lit "docs", .lit s h] "ok" (served (linkFor [.lit "docs", .lit s h])) == some "ok"
+
+#guard literalRoundTrips "c#" && literalRoundTrips "a?b" && literalRoundTrips "50%off" &&
+  literalRoundTrips "a%20b"
+
 #guard ["", ".", ".."].all fun name =>
   dispatch namePattern nameHandler (served (linkFor namePattern name)) == none
 
@@ -75,8 +81,11 @@ private local instance (priority := high) : Plausible.Arbitrary String where
 -- A property, not a theorem: the round trip rests on `Std.Http`'s encoder and decoder, which have
 -- no lemmas relating them.
 #eval Plausible.Testable.check
-  (∀ name : String, dispatch namePattern nameHandler (served (linkFor namePattern name)) =
-    if unlinkable name then none else some name)
+  (∀ lit name : String, (if h : dotSegment lit = false then
+    lit == "" || dispatch [.lit lit h, .capture "name" .string] (fun name => name)
+      (served (linkFor [.lit lit h, .capture "name" .string] name)) ==
+      if unlinkable name then none else some name
+  else true) = true)
   { numInst := 1000, quiet := true }
 
 end Routing
