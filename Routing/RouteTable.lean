@@ -89,7 +89,7 @@ private meta def exposeSrc : CommandElabM String := do
 `List PathSeg` *literal* into generated code, rather than a pattern-string call the elaborator
 would still have to reduce. -/
 private meta def segSrc : PathSeg → String
-  | .lit s => s!"Routing.PathSeg.lit {s.quote}"
+  | .lit s _ => s!"Routing.PathSeg.lit {s.quote}"
   | .capture name .nat => s!"Routing.PathSeg.capture {name.quote} .nat"
   | .capture name .string => s!"Routing.PathSeg.capture {name.quote} .string"
 
@@ -111,7 +111,7 @@ private meta def segsSrcFor (pat : TSyntax `str) : CommandElabM String :=
 segment, since mount prefixes are literal-only (see module docstring). -/
 private meta def prefixSegsSrcFor (pat : TSyntax `str) : CommandElabM String := do
   let segs ← parseSegsOrThrow pat
-  if segs.any (fun | .capture .. => true | .lit _ => false) then
+  if segs.any (fun | .capture .. => true | .lit _ _ => false) then
     throwErrorAt pat s!"mount prefix must not contain captures (got {pat.getString.quote}); captured mount prefixes are not yet supported"
   pure (segsListSrc segs)
 

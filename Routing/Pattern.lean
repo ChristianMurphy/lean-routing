@@ -28,12 +28,21 @@ def CaptureKind.name : CaptureKind → String
   | .nat => "Nat"
   | .string => "String"
 
+/-- A client removes a `.` or `..` segment, even a percent-encoded one, before sending a request,
+so no link can reach a route containing one. -/
+def dotSegment (s : String) : Bool :=
+  s == "." || s == ".."
+
 /-- One segment of a route path pattern: a literal segment to match
 verbatim, or a named, typed capture. -/
 inductive PathSeg where
-  | lit (s : String)
+  | lit (s : String) (h : dotSegment s = false := by decide)
   | capture (name : String) (kind : CaptureKind)
 deriving Repr, DecidableEq
+
+/-- A literal segment, unless `s` is a `dotSegment`. -/
+def PathSeg.lit? (s : String) : Option PathSeg :=
+  if h : dotSegment s = false then some (.lit s h) else none
 
 /-- Renders a single segment back to its pattern-string spelling. Built
 directly from `List Char` (not string interpolation) so the round-trip
@@ -41,7 +50,7 @@ proof (`parsePattern_renderPattern`, `test/RoutingTests/Pattern.lean`) can
 reason about it structurally. -/
 def PathSeg.toString (seg : PathSeg) : String :=
   match seg with
-  | .lit s => s
+  | .lit s _ => s
   | .capture name kind =>
       String.ofList (':' :: name.toList ++ ':' :: kind.name.toList)
 
@@ -62,7 +71,7 @@ where
 name alone under a leading `':'`. -/
 def PathSeg.toTemplate (seg : PathSeg) : String :=
   match seg with
-  | .lit s => s
+  | .lit s _ => s
   | .capture name _ => String.ofList (':' :: name.toList)
 
 /-- Renders a full pattern to the low-cardinality *template* that names the endpoint, e.g.
@@ -95,7 +104,7 @@ def splitOnceColon : List Char → Option (List Char × List Char)
 /-- Parses one path segment's characters into a `PathSeg`. A segment
 starting with `':'` is parsed as a capture (`name:kind`, kind must be a
 known `CaptureKind.name`); anything else is a literal. Malformed captures
-(missing kind, unknown kind name, empty capture name) fail via `none`. -/
+(missing kind, unknown kind name, empty capture name) and dot segments fail via `none`. -/
 def parseSeg (cs : List Char) : Option PathSeg :=
   match cs with
   | [] => none
@@ -113,7 +122,7 @@ def parseSeg (cs : List Char) : Option PathSeg :=
             else
               none
       else
-        some (.lit (String.ofList (c :: rest)))
+        PathSeg.lit? (String.ofList (c :: rest))
 
 /-- Splits a `List Char` on `'/'`, e.g. `"a/bc/d".toList` splits to
 `[['a'], ['b','c'], ['d']]`. -/
@@ -137,8 +146,8 @@ def mapSegs : List (List Char) → Option (List PathSeg)
 
 /-- Parses a full route pattern string (must start with `"/"`) into path
 segments. The root path `"/"` parses to `[]`; anything not starting with
-`"/"`, or containing an empty segment (doubled or trailing `/`), or an
-unparseable segment, fails via `none`. -/
+`"/"`, or containing an empty segment (doubled or trailing `/`), a dot segment,
+or an unparseable segment, fails via `none`. -/
 def parsePattern (s : String) : Option (List PathSeg) :=
   match s.toList with
   | ['/'] => some []

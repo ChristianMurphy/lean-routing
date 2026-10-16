@@ -32,7 +32,7 @@ namespace Routing
 open Lean
 
 private meta def segTerm : PathSeg → MacroM (TSyntax `term)
-  | .lit s => `(Routing.PathSeg.lit $(quote s))
+  | .lit s _ => `(Routing.PathSeg.lit $(quote s))
   | .capture name .nat => `(Routing.PathSeg.capture $(quote name) .nat)
   | .capture name .string => `(Routing.PathSeg.capture $(quote name) .string)
 
@@ -43,7 +43,7 @@ private meta def mountPrefixSegs (pat : TSyntax `str) : MacroM (List PathSeg) :=
   match parsePattern pat.getString with
   | none => Macro.throwErrorAt pat s!"invalid route pattern {pat.getString.quote}"
   | some segs =>
-      if segs.any (fun | .capture .. => true | .lit _ => false) then
+      if segs.any (fun | .capture .. => true | .lit _ _ => false) then
         Macro.throwErrorAt pat
           s!"mount prefix must not contain captures (got {pat.getString.quote}); captured mount prefixes are not yet supported"
       else

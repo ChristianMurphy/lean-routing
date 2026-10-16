@@ -18,14 +18,13 @@ literal segments contribute nothing. -/
 def HandlerType (segs : List PathSeg) (result : Type) : Type :=
   match segs with
   | [] => result
-  | .lit _ :: rest => HandlerType rest result
+  | .lit _ _ :: rest => HandlerType rest result
   | .capture _ kind :: rest => kind.type → HandlerType rest result
 
-/-- The `String` captures no link can carry as one path segment: a client removes dot segments, even
-percent-encoded ones, before sending a request, and an empty one is collapsed by many proxies and, as
-the last segment, cannot be told from a trailing slash. -/
+/-- The `String` captures no link can carry as one path segment: a `dotSegment`, or an empty one,
+which many proxies collapse and which, as the last segment, cannot be told from a trailing slash. -/
 def unlinkable (s : String) : Bool :=
-  s == "" || s == "." || s == ".."
+  s == "" || dotSegment s
 
 /-- Matches a decoded request path (`List String`, e.g. from
 `RequestTarget.path.toDecodedSegments`) against `segs`, applying `handler`
@@ -43,7 +42,7 @@ def dispatch {result : Type} :
     (segs : List PathSeg) → HandlerType segs result → List String → Option result
   | [], h, [] => some h
   | [], h, [""] => some h
-  | .lit s :: rest, h, p :: ps => if s == p then dispatch rest h ps else none
+  | .lit s _ :: rest, h, p :: ps => if s == p then dispatch rest h ps else none
   | .capture _ .nat :: rest, h, p :: ps => p.toNat?.bind (fun n => dispatch rest (h n) ps)
   | .capture _ .string :: rest, h, p :: ps =>
     if unlinkable p then none else dispatch rest (h p) ps
@@ -53,7 +52,7 @@ def dispatch {result : Type} :
 returning the rendered path. -/
 @[reducible] def LinkType : List PathSeg → Type
   | [] => String
-  | .lit _ :: rest => LinkType rest
+  | .lit _ _ :: rest => LinkType rest
   | .capture _ kind :: rest => kind.type → LinkType rest
 
 /-- Builds the `/`-joined path for `segs`, given the literal/rendered-capture parts collected so
@@ -61,7 +60,7 @@ far. A `.string` capture is percent-encoded, so the link dispatches back to it u
 `unlinkable`. -/
 def linkParts : (segs : List PathSeg) → List String → LinkType segs
   | [], parts => "/" ++ String.intercalate "/" parts
-  | .lit s :: rest, parts => linkParts rest (parts ++ [s])
+  | .lit s _ :: rest, parts => linkParts rest (parts ++ [s])
   | .capture _ .nat :: rest, parts => fun n => linkParts rest (parts ++ [toString n])
   | .capture _ .string :: rest, parts => fun s =>
     linkParts rest (parts ++ [toString (Std.Http.URI.EncodedSegment.encode s)])

@@ -20,6 +20,19 @@ namespace Routing
 #guard parsePattern "/users/:id:Bool" = none           -- unknown capture kind
 #guard parsePattern "/users/:id" = none                -- missing capture kind
 #guard parsePattern "/users/::Nat" = none              -- empty capture name
+#guard parsePattern "/a/./b" = none                    -- dot segment
+#guard parsePattern "/a/.." = none
+#guard parsePattern "/.well-known/..." = some [.lit ".well-known", .lit "..."]
+
+/--
+error: could not synthesize default value for parameter 'h' using tactics
+---
+error: Tactic `decide` proved that the proposition
+  dotSegment ".." = false
+is false
+-/
+#guard_msgs in
+example : PathSeg := .lit ".."
 
 /-! ## Round-trip: `renderPattern` and `parsePattern` are mutual inverses
  -/
@@ -31,7 +44,7 @@ for `lit`, no leading `:` (would be re-parsed as a capture); for `capture`, no `
 `parsePattern_renderPattern` needs; routes built by hand from ordinary identifiers naturally
 satisfy it. -/
 def PathSeg.WellFormed : PathSeg → Prop
-  | .lit s => s ≠ "" ∧ (∀ c ∈ s.toList, c ≠ '/') ∧ s.toList.head? ≠ some ':'
+  | .lit s _ => s ≠ "" ∧ (∀ c ∈ s.toList, c ≠ '/') ∧ s.toList.head? ≠ some ':'
   | .capture name _ => name ≠ "" ∧ (∀ c ∈ name.toList, c ≠ '/' ∧ c ≠ ':')
 
 private theorem splitOnceColon_append (name tail : List Char)
@@ -85,7 +98,7 @@ private theorem splitChars_joinWithSlash : ∀ (css : List (List Char)),
 private theorem parseSeg_toString (seg : PathSeg) (h : seg.WellFormed) :
     parseSeg seg.toString.toList = some seg := by
   cases seg with
-  | lit s =>
+  | lit s hdot =>
     obtain ⟨hne, _hnoslash, hnocolon⟩ := h
     match hs : s.toList with
     | [] => exact absurd (String.toList_eq_nil_iff.mp hs) hne
@@ -93,9 +106,10 @@ private theorem parseSeg_toString (seg : PathSeg) (h : seg.WellFormed) :
       have hc : c ≠ ':' := by
         intro hcolon
         exact hnocolon (by simp [hs, hcolon])
-      show parseSeg (c :: rest) = some (PathSeg.lit s)
+      show parseSeg (c :: rest) = some (PathSeg.lit s hdot)
       simp only [parseSeg, ite_eq_right hc]
       rw [← hs, String.ofList_toList]
+      simp [PathSeg.lit?, hdot]
   | capture name kind =>
     obtain ⟨hne, hcond⟩ := h
     have hnocolon : ∀ c ∈ name.toList, c ≠ ':' := fun c hmem => (hcond c hmem).2
@@ -150,7 +164,7 @@ theorem parsePattern_renderPattern (segs : List PathSeg) (h : ∀ seg ∈ segs, 
       obtain ⟨seg', hseg'mem, hseg'eq⟩ := hcs
       have hwf := h seg' hseg'mem
       cases seg' with
-      | lit s =>
+      | lit s _ =>
         obtain ⟨_, hnoslash, _⟩ := hwf
         subst hseg'eq
         exact hnoslash c hc
@@ -170,7 +184,7 @@ theorem parsePattern_renderPattern (segs : List PathSeg) (h : ∀ seg ∈ segs, 
         have hsegWF := h seg (by simp)
         have hne : seg.toString ≠ "" := by
           cases seg with
-          | lit s => exact hsegWF.1
+          | lit s _ => exact hsegWF.1
           | capture name kind => simp [PathSeg.toString]
         simp only [renderPattern.joinWithSlash, List.map_cons, List.map_nil]
         exact fun heq => hne (String.toList_eq_nil_iff.mp heq)
