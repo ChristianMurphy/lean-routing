@@ -92,10 +92,17 @@ def splitOnceColon : List Char → Option (List Char × List Char)
       else
         (splitOnceColon rest).map (fun (name, kind) => (c :: name, kind))
 
+/-- The segments no link can carry as one path segment: a client removes dot segments, even
+percent-encoded ones, before sending a request, and an empty one is collapsed by many proxies and, as
+the last segment, cannot be told from a trailing slash. -/
+def unlinkable (s : String) : Bool :=
+  s == "" || s == "." || s == ".."
+
 /-- Parses one path segment's characters into a `PathSeg`. A segment
 starting with `':'` is parsed as a capture (`name:kind`, kind must be a
 known `CaptureKind.name`); anything else is a literal. Malformed captures
-(missing kind, unknown kind name, empty capture name) fail via `none`. -/
+(missing kind, unknown kind name, empty capture name) and `unlinkable`
+literals fail via `none`. -/
 def parseSeg (cs : List Char) : Option PathSeg :=
   match cs with
   | [] => none
@@ -113,7 +120,8 @@ def parseSeg (cs : List Char) : Option PathSeg :=
             else
               none
       else
-        some (.lit (String.ofList (c :: rest)))
+        let s := String.ofList (c :: rest)
+        if unlinkable s then none else some (.lit s)
 
 /-- Splits a `List Char` on `'/'`, e.g. `"a/bc/d".toList` splits to
 `[['a'], ['b','c'], ['d']]`. -/
@@ -137,8 +145,8 @@ def mapSegs : List (List Char) → Option (List PathSeg)
 
 /-- Parses a full route pattern string (must start with `"/"`) into path
 segments. The root path `"/"` parses to `[]`; anything not starting with
-`"/"`, or containing an empty segment (doubled or trailing `/`), or an
-unparseable segment, fails via `none`. -/
+`"/"`, or containing an empty segment (doubled or trailing `/`), a `.` or
+`..` segment, or an unparseable segment, fails via `none`. -/
 def parsePattern (s : String) : Option (List PathSeg) :=
   match s.toList with
   | ['/'] => some []

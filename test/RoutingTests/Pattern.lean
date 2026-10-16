@@ -20,18 +20,21 @@ namespace Routing
 #guard parsePattern "/users/:id:Bool" = none           -- unknown capture kind
 #guard parsePattern "/users/:id" = none                -- missing capture kind
 #guard parsePattern "/users/::Nat" = none              -- empty capture name
+#guard parsePattern "/a/./b" = none                    -- clients remove dot segments
+#guard parsePattern "/a/.." = none
+#guard parsePattern "/.well-known/..." = some [.lit ".well-known", .lit "..."]
 
 /-! ## Round-trip: `renderPattern` and `parsePattern` are mutual inverses
  -/
 
 /-- A segment is well-formed as a *renderable* pattern segment when it doesn't contain characters
 that would be re-parsed as a different structure: no `/` (would split into more segments), and,
-for `lit`, no leading `:` (would be re-parsed as a capture); for `capture`, no `:` in the name
-(would confuse the name/kind split). This is exactly the precondition
-`parsePattern_renderPattern` needs; routes built by hand from ordinary identifiers naturally
-satisfy it. -/
+for `lit`, not `unlinkable` (would be rejected) and no leading `:` (would be re-parsed as a
+capture); for `capture`, no `:` in the name (would confuse the name/kind split). This is exactly
+the precondition `parsePattern_renderPattern` needs; routes built by hand from ordinary
+identifiers naturally satisfy it. -/
 def PathSeg.WellFormed : PathSeg → Prop
-  | .lit s => s ≠ "" ∧ (∀ c ∈ s.toList, c ≠ '/') ∧ s.toList.head? ≠ some ':'
+  | .lit s => unlinkable s = false ∧ (∀ c ∈ s.toList, c ≠ '/') ∧ s.toList.head? ≠ some ':'
   | .capture name _ => name ≠ "" ∧ (∀ c ∈ name.toList, c ≠ '/' ∧ c ≠ ':')
 
 private theorem splitOnceColon_append (name tail : List Char)
@@ -86,16 +89,17 @@ private theorem parseSeg_toString (seg : PathSeg) (h : seg.WellFormed) :
     parseSeg seg.toString.toList = some seg := by
   cases seg with
   | lit s =>
-    obtain ⟨hne, _hnoslash, hnocolon⟩ := h
+    obtain ⟨hlinkable, _hnoslash, hnocolon⟩ := h
     match hs : s.toList with
-    | [] => exact absurd (String.toList_eq_nil_iff.mp hs) hne
+    | [] => simp [String.toList_eq_nil_iff.mp hs, unlinkable] at hlinkable
     | c :: rest =>
       have hc : c ≠ ':' := by
         intro hcolon
         exact hnocolon (by simp [hs, hcolon])
       show parseSeg (c :: rest) = some (PathSeg.lit s)
       simp only [parseSeg, ite_eq_right hc]
-      rw [← hs, String.ofList_toList]
+      rw [← hs, String.ofList_toList, hlinkable]
+      rfl
   | capture name kind =>
     obtain ⟨hne, hcond⟩ := h
     have hnocolon : ∀ c ∈ name.toList, c ≠ ':' := fun c hmem => (hcond c hmem).2
@@ -170,7 +174,10 @@ theorem parsePattern_renderPattern (segs : List PathSeg) (h : ∀ seg ∈ segs, 
         have hsegWF := h seg (by simp)
         have hne : seg.toString ≠ "" := by
           cases seg with
-          | lit s => exact hsegWF.1
+          | lit s =>
+            intro hempty
+            simp only [PathSeg.toString] at hempty
+            simp [PathSeg.WellFormed, hempty, unlinkable] at hsegWF
           | capture name kind => simp [PathSeg.toString]
         simp only [renderPattern.joinWithSlash, List.map_cons, List.map_nil]
         exact fun heq => hne (String.toList_eq_nil_iff.mp heq)
