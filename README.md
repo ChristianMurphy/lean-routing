@@ -140,6 +140,28 @@ This comes out the same whichever prefix `Blog` is mounted under (or none at all
 
 Linking to a strict descendant of the current page needs its own segment repeated (`relativeUrl "/posts/5" "/posts/5/edit" = "5/edit"`, not `"edit"`); that is the standard RFC 3986 rule that treats the current page's last segment as a "file", not a directory. Linking *up* to an ancestor page renders as a directory reference (`"."`/`".."`), which resolves to a trailing-slash URL; `dispatch` tolerates that trailing slash once a pattern is otherwise fully matched, so the link still reaches its target.
 
+## Formal verification
+
+- Pattern round trip ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `parsePattern_renderPattern`): rendering a list of well-formed segments to a pattern string and parsing it back recovers exactly those segments.
+- Template stability ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `renderTemplate_kind_invariant`): changing a capture's kind leaves the endpoint template that `matchedPattern?` reports unchanged, so telemetry grouped by route survives `:id:Nat` becoming `:id:String`.
+- Mount-prefix cancellation ([test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean), `relativeSegments_prefix`): a prefix shared by both endpoints drops out of a relative link, so a module's self-links are the same wherever it is mounted.
+- By construction: a handler's type is computed from its pattern, so a wrong-arity or wrong-type handler fails to compile, and `PathSeg.lit` takes a proof that its segment is neither `.` nor `..`. The `#guard_msgs` tests in [test/RoutingTests/](test/RoutingTests/) pin these, along with the compile-time rejection of malformed patterns, duplicate route names and captured mount prefixes.
+
+## Conformance tests
+
+There is no external suite for a router, so these check behaviour against the specifications and implementation it sits between.
+
+- [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean): links are parsed and percent-decoded by `Std.Http`'s own request-target parser, as `toHandler` does, and must dispatch back to the values they were built from, including literals holding `#`, `?` and `%`; an empty, `.` or `..` `String` capture never matches.
+- [test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean): the RFC 3986 edge cases, that a same-page link is not the empty same-document reference, that a first segment holding `:` is not read as a scheme nor an empty one as an absolute path, and that an upward `"."` link resolves to a trailing-slash path `dispatch` still serves.
+- [test/RoutingTests/Server.lean](test/RoutingTests/Server.lean): the real `toHandler` against a real `Std.Http` request, checking that the matched route reaches both the request's and the response's `extensions`, that a 404 carries none, and that a mounted index requested without its slash gets a `308` with the query intact.
+
+## Property-based testing
+
+- [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean): [Plausible](https://github.com/leanprover-community/plausible) fuzzing, weighted towards `.`, `/`, `%`, `?`, `#`, `:` and space, of the link round trip through `Std.Http`'s encoder and decoder: dispatching the served form of a generated link recovers its `String` capture, or nothing when the capture is unlinkable. A property rather than a theorem because those functions have no lemmas relating them.
+- [test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean): fuzzing `relativeUrl` against a model of RFC 3986 §5.2 resolution, that the reference it returns resolves back to its target, or to the target with a trailing slash, which `dispatch` accepts.
+
+The `linkFor`/`dispatch` round trip without `Std.Http` is not proved either, since `String.splitOn` and `String.toNat?` have no equational theory in core; examples in [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean) stand in for it.
+
 ## License
 
 This library is released under the Apache 2.0 license. See the LICENSE file for the complete license text.
