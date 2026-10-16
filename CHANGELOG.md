@@ -1,9 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-- A route pattern can no longer contain a `.` or `..` segment, since no link can reach one.
-
 ## [0.8.0] - 2026-10-06
 
 - Percent-encode `String` captures in generated links.

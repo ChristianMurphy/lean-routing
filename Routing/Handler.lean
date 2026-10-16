@@ -21,6 +21,12 @@ def HandlerType (segs : List PathSeg) (result : Type) : Type :=
   | .lit _ :: rest => HandlerType rest result
   | .capture _ kind :: rest => kind.type → HandlerType rest result
 
+/-- The `String` captures no link can carry as one path segment: a client removes dot segments, even
+percent-encoded ones, before sending a request, and an empty one is collapsed by many proxies and, as
+the last segment, cannot be told from a trailing slash. -/
+def unlinkable (s : String) : Bool :=
+  s == "" || s == "." || s == ".."
+
 /-- Matches a decoded request path (`List String`, e.g. from
 `RequestTarget.path.toDecodedSegments`) against `segs`, applying `handler`
 to the extracted, typed capture values as it goes.
