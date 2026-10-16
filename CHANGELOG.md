@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.0] - 2026-10-16
 
 - A route pattern can no longer contain a `.` or `..` segment, since no link can reach one; `PathSeg.lit` takes a proof of this, so a match on it binds one more argument.
 - Percent-encode literal segments in generated links.
