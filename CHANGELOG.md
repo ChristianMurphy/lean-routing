@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.0] - 2026-10-18
 
 - Add `Router`, which groups routes and mounts behind per-subtree middleware.
 
