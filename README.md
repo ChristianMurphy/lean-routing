@@ -108,7 +108,7 @@ Like `mount`, no handler wrapping is needed for the prefix. Unlike `mount`, nest
 
 ### Routers and middleware
 
-A `Router` groups routes behind its own middleware, so different parts of an application can sit behind different stacks. A middleware is any `StatelessHandler → StatelessHandler`; a router applies its list in order, the first outermost, once when `Router.toHandler` builds it.
+A `Router` groups routes behind its own middleware, so different parts of an application can sit behind different stacks. A middleware is any `StatelessHandler → StatelessHandler`, such as those in [lean-middleware](https://github.com/paulbutcher/lean-middleware); a router applies its list in order, the first outermost, once when `Router.toHandler` builds it.
 
 ```lean
 def api : Router :=
