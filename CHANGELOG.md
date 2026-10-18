@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.10.1] - 2026-10-18
+
+- Chore: bump dependencies.
+
 ## [0.10.0] - 2026-10-18
 
 - Add `Router`, which groups routes and mounts behind per-subtree middleware.
