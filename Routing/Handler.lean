@@ -71,4 +71,9 @@ one argument per capture (in order) and returning one, e.g.
 `linkFor [.lit "todos", .capture "id" .nat] : Nat → String`. -/
 def linkFor (segs : List PathSeg) : LinkType segs := linkParts segs []
 
+/-- The link for a mount prefix's decoded literal segments, `"/"` for none, encoded as `linkParts`
+encodes a literal. -/
+def mountLink (segs : List String) : String :=
+  "/" ++ String.intercalate "/" (segs.map fun s => toString (Std.Http.URI.EncodedSegment.encode s))
+
 end Routing

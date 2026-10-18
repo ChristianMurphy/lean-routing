@@ -10,3 +10,4 @@ import RoutingTests.Server
 import RoutingTests.Mount
 import RoutingTests.RelativeLink
 import RoutingTests.CrossModule
+import RoutingTests.Router

@@ -162,4 +162,8 @@ def mountSegs : List PathSeg → List PathSeg → List PathSeg
   | pre, [] => pre ++ [.lit ""]
   | pre, segs => pre ++ segs
 
+/-- The literal path prefix a `Router` mount serves, decoded, as a request path is. -/
+structure MountPoint where
+  segs : List String
+
 end Routing

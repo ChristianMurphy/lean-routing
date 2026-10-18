@@ -38,41 +38,48 @@ for `renderPattern` on the way. -/
 def matchedPattern? (extensions : Extensions) : Option String :=
   (matchedRoute? extensions).map (·.template)
 
-/-- Where to redirect a request that matched no route but would match with a trailing slash, as a
-mounted index does (`mountSegs`, `Pattern.lean`): its target with the slash added, query intact.
-Serving the slashless form instead would break relative links from that page. -/
+/-- Whether a request for `path` would match one of `routes` with a trailing slash added, as a
+mounted index does (`mountSegs`, `Pattern.lean`). -/
+def wantsSlash (routes : List (Route Result)) (method : Method) (path : List String) : Bool :=
+  path.getLast? != some "" && (matchTable routes method (path ++ [""])).isSome
+
+/-- Where to redirect a request that matched no route but `wantsSlash`: its target with the slash
+added, query intact. Serving the slashless form instead would break relative links from that
+page. -/
 def slashRedirect? (routes : List (Route Result)) (method : Method) (target : RequestTarget)
     (path : List String) : Option Header.Value :=
-  if path.getLast? != some "" && (matchTable routes method (path ++ [""])).isSome then
+  if wantsSlash routes method path then
     let query := target.query
     Header.Value.ofString?
       (toString target.path ++ "/" ++ if query.isEmpty then "" else toString query)
   else
     none
 
-/-- Wires a route table into a `Std.Http.Server.Handler`: decodes the
-incoming request's method and path (`RequestTarget.path.toDecodedSegments`
-feeds `dispatch` via `matchTable`), tries each route in order, and
-applies the matched handler (or `notFound`) to the full request. A request that matches nothing
-but would with a trailing slash gets a `308` there instead (`slashRedirect?`).
+/-- Decodes the request's method and path (`RequestTarget.path.toDecodedSegments` feeds `dispatch`
+via `matchTable`), tries each route in order, and applies the matched handler to the full request.
+A request that matches nothing but would with a trailing slash gets a `308` there instead
+(`slashRedirect?`). `none` if neither.
 
 The matched route is published (as a `MatchedRoute` extension, read back with `matchedRoute?`)
 in *both* directions, because they reach different readers. The request copy is visible to the
 matched handler and to anything the router calls into. The response copy is the one visible to
-middleware *wrapping* `toHandler`: such middleware has already passed its request downwards by the
+middleware *wrapping* the router: such middleware has already passed its request downwards by the
 time matching happens, so the response is the only channel that travels back up to it. -/
+def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
+    Option (ContextAsync (Response Body.Any)) :=
+  let path := request.line.uri.path.toDecodedSegments.toList
+  match matchTable routes request.line.method path with
+  | some (matched, handler) => some do
+      let response ← handler { request with extensions := request.extensions.insert matched }
+      return { response with extensions := response.extensions.insert matched }
+  | none =>
+      (slashRedirect? routes request.line.method request.line.uri path).map fun location =>
+        Response.withStatus .permanentRedirect |>.header Header.Name.location location |>.text ""
+
+/-- Wires a route table into a `Std.Http.Server.Handler`, answering with `respond?`, else with
+`notFound`. -/
 def toHandler (routes : List (Route Result)) (notFound : Result := defaultNotFound) :
     StatelessHandler :=
-  Handler.ofFn fun request =>
-    let path := request.line.uri.path.toDecodedSegments.toList
-    match matchTable routes request.line.method path with
-    | some (matched, handler) => do
-        let response ← handler { request with extensions := request.extensions.insert matched }
-        return { response with extensions := response.extensions.insert matched }
-    | none =>
-        match slashRedirect? routes request.line.method request.line.uri path with
-        | some location =>
-            Response.withStatus .permanentRedirect |>.header Header.Name.location location |>.text ""
-        | none => notFound request
+  Handler.ofFn fun request => (respond? routes request).getD (notFound request)
 
 end Routing

@@ -32,6 +32,9 @@ only add a function arrow for `.capture` segments, so a literal prefix leaves a 
 required handler type unchanged from what it would be for the un-mounted pattern, so no glue code
 is needed at the call site that builds the actual `Route`.
 
+Every `Patterns` and `Links` also carries `mountedAt`, the full prefix its table is mounted under,
+and `Patterns` coerces to the `MountPoint` a `Router` mount takes (`Router.lean`).
+
 The elaborator below is the only thing here that needs the Lean frontend, and it reaches it
 through `meta import` alone, so a program built against this library does not link it
 (`scripts/check-runtime.sh`).
@@ -107,13 +110,17 @@ private meta def segsListSrc (segs : List PathSeg) : String :=
 private meta def segsSrcFor (pat : TSyntax `str) : CommandElabM String :=
   return segsListSrc (← parseSegsOrThrow pat)
 
-/-- Like `segsSrcFor`, but for a `mount` row's prefix: additionally rejects any `.capture`
-segment, since mount prefixes are literal-only (see module docstring). -/
-private meta def prefixSegsSrcFor (pat : TSyntax `str) : CommandElabM String := do
+/-- A `mount` row's prefix: rejects any `.capture` segment, since mount prefixes are literal-only
+(see module docstring). -/
+private meta def prefixSegsFor (pat : TSyntax `str) : CommandElabM (List PathSeg) := do
   let segs ← parseSegsOrThrow pat
   if segs.any (fun | .capture .. => true | .lit _ _ => false) then
     throwErrorAt pat s!"mount prefix must not contain captures (got {pat.getString.quote}); captured mount prefixes are not yet supported"
-  pure (segsListSrc segs)
+  pure segs
+
+/-- Lean source text for a `List String` literal. -/
+private meta def stringsListSrc (strs : List String) : String :=
+  "[" ++ String.intercalate ", " (strs.map String.quote) ++ "]"
 
 /-- Resolves `sub` (a `mount` row's app identifier) to its generated `Patterns` structure,
 accounting for the current namespace/opens the same way a plain identifier typed by the user
@@ -152,30 +159,40 @@ private meta def mountedFieldStruct? (env : Environment) (structName field : Nam
 mount chains are short by construction: each level is a separately-declared feature module. -/
 private meta def maxMountDepth : Nat := 64
 
+/-- The field every generated `Patterns` and `Links` carries for the prefix its table is mounted
+under, which is why a row may not take its name. -/
+private meta def mountedAtField : Name := `mountedAt
+
 /-- Recursively walks `structName` (a `Patterns`-shaped structure, reachable via `accessSrc`, Lean
 source text for a value of that type, e.g. `"BlogRoutes.patterns"`), building the
 `field := ..., ...` source for both the prefixed `Patterns` value and the corresponding `Links`
 value. Recurses into fields that are themselves mounted sub-tables (`mountedFieldStruct?`), so a
-mount nests to whatever depth the sub-table itself nests; `prefixSegsSrc` is the same at every
-depth, since a mount's prefix applies to everything under it. Links values are computed from the
-*Patterns* side (`Routing.linkFor` applied to the prefixed segs), same as a leaf row does; there's
-no pre-built link function to unwrap. -/
+mount nests to whatever depth the sub-table itself nests; `pre` is the same at every depth, since a
+mount's prefix applies to everything under it. Links values are computed from the *Patterns* side
+(`Routing.linkFor` applied to the prefixed segs), same as a leaf row does; there's no pre-built
+link function to unwrap. -/
 private meta def mountFieldsSrc (env : Environment) (fuel : Nat) (structName : Name) (accessSrc : String)
-    (prefixSegsSrc : String) : CommandElabM (String × String) := do
+    (pre : List PathSeg) : CommandElabM (String × String) := do
   match fuel with
   | 0 => throwError "mounted route tables nest more than {maxMountDepth} levels deep at '{structName}'"
   | fuel + 1 =>
+    let prefixSegsSrc := segsListSrc pre
     let mut patFields : Array String := #[]
     let mut linkFields : Array String := #[]
     for f in getStructureFields env structName do
       let childAccessSrc := s!"{accessSrc}.{f}"
+      if f == mountedAtField then
+        let mountedAtSrc := s!"{stringsListSrc (pre.map PathSeg.toString)} ++ {childAccessSrc}"
+        patFields := patFields.push s!"{f} := {mountedAtSrc}"
+        linkFields := linkFields.push s!"{f} := Routing.mountLink ({mountedAtSrc})"
+        continue
       match ← mountedFieldStruct? env structName f with
       | none =>
           patFields := patFields.push s!"{f} := Routing.mountSegs {prefixSegsSrc} {childAccessSrc}"
           linkFields := linkFields.push s!"{f} := Routing.linkFor (Routing.mountSegs {prefixSegsSrc} {childAccessSrc})"
       | some nestedStructName =>
           let (nestedPat, nestedLink) ←
-            mountFieldsSrc env fuel nestedStructName childAccessSrc prefixSegsSrc
+            mountFieldsSrc env fuel nestedStructName childAccessSrc pre
           patFields := patFields.push (s!"{f} := " ++ "{ " ++ nestedPat ++ " }")
           linkFields := linkFields.push (s!"{f} := " ++ "{ " ++ nestedLink ++ " }")
     pure (String.intercalate ", " patFields.toList, String.intercalate ", " linkFields.toList)
@@ -200,11 +217,11 @@ private meta def rowGenFor (env : Environment) (name : Ident) : RowKind → Comm
           linksFieldTypeSrc := s!"Routing.LinkType {segsSrc}"
           linksValueSrc := s!"Routing.linkFor {segsSrc}" }
   | .mount prefixPat sub => do
-      let prefixSegsSrc ← prefixSegsSrcFor prefixPat
+      let pre ← prefixSegsFor prefixPat
       let subPatterns ← resolveSubPatterns sub
       let subApp := subPatterns.getPrefix
       let (patFieldsSrc, linkFieldsSrc) ←
-        mountFieldsSrc env maxMountDepth subPatterns s!"{subApp}.patterns" prefixSegsSrc
+        mountFieldsSrc env maxMountDepth subPatterns s!"{subApp}.patterns" pre
       pure
         { name
           patternsFieldTypeSrc := toString subPatterns
@@ -228,6 +245,9 @@ elab_rules : command
     -- regardless of row kind.
     let mut seen : Std.HashMap Name Syntax := {}
     for (name, _) in entries do
+      if name.getId == mountedAtField then
+        throwErrorAt name
+          s!"route name '{mountedAtField}' is reserved for the prefix the table is mounted under"
       if let some prior := seen[name.getId]? then
         throwErrorAt name s!"route name '{name.getId}' already declared at {prior}"
       seen := seen.insert name.getId name
@@ -254,16 +274,23 @@ elab_rules : command
     let patternsTypeIdent := qualifyPlain appId appName `Patterns
     let patternsValIdent := qualifyPlain appId appName `patterns
     let patternFieldsSrc := String.intercalate "\n  " <|
-      rowGens.toList.map fun g => s!"{g.name.getId} : {g.patternsFieldTypeSrc}"
+      s!"{mountedAtField} : List String" ::
+        rowGens.toList.map fun g => s!"{g.name.getId} : {g.patternsFieldTypeSrc}"
     elabCommandFromSource appId
       s!"structure {patternsTypeIdent.getId} where\n  {patternFieldsSrc}"
 
     let expose ← exposeSrc
     let patternValFieldsSrc := String.intercalate ", " <|
-      rowGens.toList.map fun g => s!"{g.name.getId} := {g.patternsValueSrc}"
+      s!"{mountedAtField} := []" ::
+        rowGens.toList.map fun g => s!"{g.name.getId} := {g.patternsValueSrc}"
     elabCommandFromSource appId <|
       expose ++ "def " ++ toString patternsValIdent.getId ++ " : " ++
         toString patternsTypeIdent.getId ++ " := { " ++ patternValFieldsSrc ++ " }"
+
+    -- So a `Router` mount (`Router.lean`) can name a table by its `patterns` value.
+    elabCommandFromSource appId <|
+      s!"instance {appName ++ `instCoeMountPoint} : Coe " ++ toString patternsTypeIdent.getId ++
+        " Routing.MountPoint := ⟨fun p => ⟨p.mountedAt⟩⟩"
 
     -- 5/6. `structure App.Links where name : LinkType [PathSeg literal] ...` and
     -- `def App.links : App.Links := { name := linkFor [PathSeg literal], ... }`.
@@ -277,12 +304,14 @@ elab_rules : command
     let linksTypeIdent := qualifyPlain appId appName `Links
     let linksValIdent := qualifyPlain appId appName `links
     let structFieldsSrc := String.intercalate "\n  " <|
-      rowGens.toList.map fun g => s!"{g.name.getId} : {g.linksFieldTypeSrc}"
+      s!"{mountedAtField} : String" ::
+        rowGens.toList.map fun g => s!"{g.name.getId} : {g.linksFieldTypeSrc}"
     elabCommandFromSource appId
       s!"structure {linksTypeIdent.getId} where\n  {structFieldsSrc}"
 
     let valFieldsSrc := String.intercalate ", " <|
-      rowGens.toList.map fun g => s!"{g.name.getId} := {g.linksValueSrc}"
+      s!"{mountedAtField} := Routing.mountLink []" ::
+        rowGens.toList.map fun g => s!"{g.name.getId} := {g.linksValueSrc}"
     elabCommandFromSource appId <|
       expose ++ "def " ++ toString linksValIdent.getId ++ " : " ++
         toString linksTypeIdent.getId ++ " := { " ++ valFieldsSrc ++ " }"

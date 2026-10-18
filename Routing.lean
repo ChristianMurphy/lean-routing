@@ -8,6 +8,7 @@ public import Routing.Pattern
 public import Routing.Handler
 public import Routing.Route
 public import Routing.Server
+public import Routing.Router
 public import Routing.RouteTable
 public import Routing.RouteMount
 public import Routing.RelativeLink
@@ -31,6 +32,9 @@ A `route_table` row can `mount` another table under a literal path prefix
 already-built routes. Either way an app composes from independently-declared feature modules, and
 `Routing.relativeUrl` (`Routing/RelativeLink.lean`) lets code inside one self-link from its own
 unprefixed links, wherever the module ends up mounted.
+
+A `Router` (`Routing/Router.lean`) groups routes, and mounts of them, behind its own middleware,
+and flattens them to the same `List (Route Result)` that `toHandler` serves.
 
 ## Limitations
 

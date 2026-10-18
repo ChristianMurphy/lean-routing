@@ -106,6 +106,32 @@ def app : StatelessHandler :=
 
 Like `mount`, no handler wrapping is needed for the prefix. Unlike `mount`, nesting is just repeated `mount_routes` + `++`; routes are already a flat list, so there's no structure to walk.
 
+### Routers and middleware
+
+A `Router` groups routes behind its own middleware, so different parts of an application can sit behind different stacks. A middleware is any `StatelessHandler → StatelessHandler`; a router applies its list in order, the first outermost, once when `Router.toHandler` builds it.
+
+```lean
+def api : Router :=
+  { middlewares := [requireToken],
+    routes := [ .mount AppName.patterns.blog
+      [ .get Blog.patterns.index (fun request => Response.ok.text "blog home"),
+        .get Blog.patterns.post (fun (slug : String) request => Response.ok.text s!"post {slug}") ] ],
+    fallback := some blogNotFound }
+
+def site : Router :=
+  { middlewares := [logging],
+    routes := [ .get AppName.patterns.index (fun request => Response.ok.text "home") ],
+    routers := [api] }
+
+def app : StatelessHandler := site.toHandler
+```
+
+A mount takes every request under its root, and its entries are written against the mounted table's own unprefixed `patterns`. Its root is a table's `patterns` value, which records where that table is mounted (`AppName.patterns.blog.mountedAt = ["blog"]`, and `AppName.links.blog.mountedAt = "/blog"`), or one no table describes, written `⟨["t", tenant]⟩`. Mounts nest, each root prefixed by those enclosing it.
+
+A router serves a request with its first route that matches, else its first sub-router that takes it, else its `fallback` (a plain `404 Not Found` by default). A router takes a request if one of its routes matches it or one of its mounts or sub-routers takes it, so a miss under `/blog` above gets `blogNotFound`, behind `requireToken`. `matchedRoute?` reports the full pattern, mount roots included, whichever router served the request. As with `toHandler`, a mounted index requested without its slash gets a `308`.
+
+`mountedAt` is reserved as a `route_table` row name, and is an extra field of every generated `Patterns` and `Links` structure, so code building one positionally needs updating.
+
 ### Which route matched?
 
 The matched route is stored in the `extensions` of both the request and the response. Read it back with `Routing.matchedRoute?`:
@@ -144,6 +170,7 @@ Linking to a strict descendant of the current page needs its own segment repeate
 
 - Pattern round trip ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `parsePattern_renderPattern`): rendering a list of well-formed segments to a pattern string and parsing it back recovers exactly those segments.
 - Template stability ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `renderTemplate_kind_invariant`): changing a capture's kind leaves the endpoint template that `matchedPattern?` reports unchanged, so telemetry grouped by route survives `:id:Nat` becoming `:id:String`.
+- Router mounts ([test/RoutingTests/Router.lean](test/RoutingTests/Router.lean), `Route.under_segs`): a route under a `Router` mount has exactly the pattern a `route_table` mount gives it, so it matches what the table's links point at, and a root holding a `.` or `..` segment serves nothing.
 - Mount-prefix cancellation ([test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean), `relativeSegments_prefix`): a prefix shared by both endpoints drops out of a relative link, so a module's self-links are the same wherever it is mounted.
 - By construction: a handler's type is computed from its pattern, so a wrong-arity or wrong-type handler fails to compile, and `PathSeg.lit` takes a proof that its segment is neither `.` nor `..`. The `#guard_msgs` tests in [test/RoutingTests/](test/RoutingTests/) pin these, along with the compile-time rejection of malformed patterns, duplicate route names and captured mount prefixes.
 
@@ -154,6 +181,7 @@ There is no external suite for a router, so these check behaviour against the sp
 - [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean): links are parsed and percent-decoded by `Std.Http`'s own request-target parser, as `toHandler` does, and must dispatch back to the values they were built from, including literals holding `#`, `?` and `%`; an empty, `.` or `..` `String` capture never matches.
 - [test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean): the RFC 3986 edge cases, that a same-page link is not the empty same-document reference, that a first segment holding `:` is not read as a scheme nor an empty one as an absolute path, and that an upward `"."` link resolves to a trailing-slash path `dispatch` still serves.
 - [test/RoutingTests/Server.lean](test/RoutingTests/Server.lean): the real `toHandler` against a real `Std.Http` request, checking that the matched route reaches both the request's and the response's `extensions`, that a 404 carries none, and that a mounted index requested without its slash gets a `308` with the query intact.
+- [test/RoutingTests/Router.lean](test/RoutingTests/Router.lean): a `Router` tree against real requests, checking middleware order, which router serves a hit and which answers a miss under a mount, the full pattern reported on both request and response, and that `Expect: 100-continue` is decided by the router that would serve the request.
 
 ## Property-based testing
 
