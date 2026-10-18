@@ -14,8 +14,7 @@ open Std Async
 open Std Http Server
 
 /-- A route, or a group of entries mounted under a literal root. A mount's entries are written
-against patterns relative to its root, typically the mounted table's own unprefixed `patterns`. A
-root holding a `dotSegment` serves nothing, since no request can reach it. -/
+against patterns relative to its root, typically the mounted table's own unprefixed `patterns`. -/
 inductive Entry where
   | route (route : Route Result)
   | mount (root : MountPoint) (entries : List Entry)
@@ -33,29 +32,31 @@ def Entry.put (segs : List PathSeg) (handler : HandlerType segs Result) : Entry 
 def Entry.delete (segs : List PathSeg) (handler : HandlerType segs Result) : Entry :=
   .route (.delete segs handler)
 
-/-- `r` with the literal `s` in front; `none` if `s` is a `dotSegment`. Its handler needs no
-cast, because `HandlerType` reduces through a `.lit`. -/
-def Route.consLit? (s : String) (r : Route result) : Option (Route result) :=
-  if h : dotSegment s = false then
-    some { method := r.method, segs := .lit s h :: r.segs, handler := r.handler }
-  else
-    none
+/-- `r` with the literals `pre` in front. Its handler needs no cast, because `HandlerType` reduces
+through a `.lit`. -/
+def Route.prependLits : (pre : List String) → pre.all (!dotSegment ·) → Route result →
+    Route result
+  | [], _, r => r
+  | s :: rest, h, r =>
+    have h : dotSegment s = false ∧ rest.all (!dotSegment ·) := by
+      simpa only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] using h
+    let r := Route.prependLits rest h.2 r
+    { method := r.method, segs := .lit s h.1 :: r.segs, handler := r.handler }
 
 /-- An index as a directory, so it renders and matches with a trailing slash once mounted. -/
 def Route.asDirectory : Route result → Route result
   | { method, segs := [], handler } => { method, segs := [.lit ""], handler }
   | r => r
 
-/-- `r` under the literal prefix `pre`, with the segments `mountSegs` gives; `none` if `pre`
-holds a `dotSegment`. -/
-def Route.under (pre : List String) (r : Route result) : Option (Route result) :=
-  if pre.isEmpty then some r else pre.foldrM Route.consLit? r.asDirectory
+/-- `r` under `root`, with the segments `mountSegs` gives. -/
+def Route.under (root : MountPoint) (r : Route result) : Route result :=
+  if root.segs.isEmpty then r else Route.prependLits root.segs root.valid r.asDirectory
 
 mutual
 /-- The routes an entry serves, in order, each with the full pattern of every mount enclosing it. -/
 def Entry.toRoutes : Entry → List (Route Result)
   | .route r => [r]
-  | .mount root entries => (Entry.listToRoutes entries).filterMap (Route.under root.segs)
+  | .mount root entries => (Entry.listToRoutes entries).map (Route.under root)
 
 def Entry.listToRoutes : List Entry → List (Route Result)
   | [] => []
@@ -88,7 +89,7 @@ private def Router.compile : Router → Compiled
   | { middlewares, routes, routers, fallback } =>
     let flat := Entry.listToRoutes routes
     let roots := routes.filterMap fun
-      | .mount root _ => if root.segs.any dotSegment then none else some root.segs
+      | .mount root _ => some root.segs
       | .route _ => none
     let subs := Router.compileAll routers
     let fallback := fallback.getD (Handler.ofFn defaultNotFound)

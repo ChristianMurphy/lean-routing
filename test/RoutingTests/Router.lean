@@ -10,14 +10,15 @@ namespace Routing
 open Std Async
 open Std Http Server
 
-theorem foldrM_consLit_segs (pre : List String) (r : Route α) :
-    (pre.foldrM Route.consLit? r).map (·.segs) = (pre.mapM PathSeg.lit?).map (· ++ r.segs) := by
+theorem prependLits_segs (pre : List String) (h) (r : Route α) :
+    (pre.mapM PathSeg.lit?).map (· ++ r.segs) = some (Route.prependLits pre h r).segs := by
   induction pre with
-  | nil => simp
+  | nil => simp [Route.prependLits]
   | cons s rest ih =>
-    simp only [List.foldrM_cons, List.mapM_cons]
-    cases h : rest.foldrM Route.consLit? r <;> cases hm : rest.mapM PathSeg.lit? <;>
-      simp_all [Route.consLit?, PathSeg.lit?] <;> split <;> simp_all
+    simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at h
+    have := ih h.2
+    simp only [List.mapM_cons, Route.prependLits]
+    cases hm : rest.mapM PathSeg.lit? <;> simp_all [PathSeg.lit?]
 
 theorem mapM_lit?_ne_nil (s : String) (rest : List String) :
     (s :: rest).mapM PathSeg.lit? ≠ some [] := by
@@ -25,23 +26,23 @@ theorem mapM_lit?_ne_nil (s : String) (rest : List String) :
   cases PathSeg.lit? s <;> cases rest.mapM PathSeg.lit? <;> simp
 
 /-- A route in a `Router` mount has exactly the pattern a `route_table` mount gives it, so it
-matches, and reports, what the table's links point at; and a mount holding a dot segment, which
-no `PathSeg.lit` can, serves nothing. -/
-theorem Route.under_segs (pre : List String) (r : Route α) :
-    (r.under pre).map (·.segs) = (pre.mapM PathSeg.lit?).map (mountSegs · r.segs) := by
-  obtain ⟨method, segs, handler⟩ := r
-  cases pre with
+matches, and reports, what the table's links point at. -/
+theorem Route.under_segs (root : MountPoint) (r : Route α) :
+    (root.segs.mapM PathSeg.lit?).map (mountSegs · r.segs) = some (r.under root).segs := by
+  obtain ⟨segs, valid⟩ := root
+  cases segs with
   | nil => simp [Route.under, mountSegs]
   | cons s rest =>
     simp only [Route.under, List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte,
-      foldrM_consLit_segs]
-    have := mapM_lit?_ne_nil s rest
+      ← prependLits_segs]
     cases h : (s :: rest).mapM PathSeg.lit? with
     | none => rfl
     | some ps =>
       cases ps with
-      | nil => exact absurd h this
-      | cons p ps => cases segs <;> simp [Route.asDirectory, mountSegs]
+      | nil => exact absurd h (mapM_lit?_ne_nil s rest)
+      | cons p ps =>
+        obtain ⟨method, segs, handler⟩ := r
+        cases segs <;> simp [Route.asDirectory, mountSegs]
 
 route_table RouterV1
   [ ping := "/ping" ]
@@ -55,8 +56,8 @@ route_table RouterSite
   [ home := "/",
     api := mount "/api" RouterApi ]
 
-#guard RouterSite.patterns.mountedAt = []
-#guard RouterSite.patterns.api.v1.mountedAt = ["api", "v1"]
+#guard RouterSite.patterns.mountedAt.segs = []
+#guard RouterSite.patterns.api.v1.mountedAt.segs = ["api", "v1"]
 #guard RouterSite.links.mountedAt = "/"
 #guard RouterSite.links.api.v1.mountedAt = "/api/v1"
 #guard ((RouterSite.patterns.api : MountPoint)).segs = ["api"]
@@ -102,9 +103,20 @@ private def apiRouter : Router :=
     fallback := some (Handler.ofFn fun _ => Response.badRequest.text "api miss") }
 
 private def tenantRouter : Router :=
-  { routes := ["acme", ".."].map fun tenant => .mount ⟨["t", tenant]⟩ [ .get [] (ok tenant) ] }
+  { routes := ["acme", ".."].filterMap fun tenant =>
+      (MountPoint.ofSegs? ["t", tenant]).map fun root => .mount root [ .get [] (ok tenant) ] }
 
-#guard (Entry.mount ⟨["t", ".."]⟩ [ .get [] (ok "unreachable") ]).toRoutes.isEmpty
+#guard (MountPoint.ofSegs? ["t", ".."]).isNone
+
+/--
+error: could not synthesize default value for field 'valid' of 'Routing.MountPoint' using tactics
+---
+error: Tactic `decide` proved that the proposition
+  (["t", ".."].all fun x => !dotSegment x) = true
+is false
+-/
+#guard_msgs in
+example : Entry := .mount { segs := ["t", ".."] } []
 
 private def siteRouter : Router :=
   { middlewares := [tag "outer", tag "inner"]

@@ -182,9 +182,10 @@ private meta def mountFieldsSrc (env : Environment) (fuel : Nat) (structName : N
     for f in getStructureFields env structName do
       let childAccessSrc := s!"{accessSrc}.{f}"
       if f == mountedAtField then
-        let mountedAtSrc := s!"{stringsListSrc (pre.map PathSeg.toString)} ++ {childAccessSrc}"
+        let mountedAtSrc :=
+          s!"Routing.MountPoint.append (.mk {stringsListSrc (pre.map PathSeg.toString)}) {childAccessSrc}"
         patFields := patFields.push s!"{f} := {mountedAtSrc}"
-        linkFields := linkFields.push s!"{f} := Routing.mountLink ({mountedAtSrc})"
+        linkFields := linkFields.push s!"{f} := Routing.mountLink ({mountedAtSrc}).segs"
         continue
       match ← mountedFieldStruct? env structName f with
       | none =>
@@ -274,14 +275,14 @@ elab_rules : command
     let patternsTypeIdent := qualifyPlain appId appName `Patterns
     let patternsValIdent := qualifyPlain appId appName `patterns
     let patternFieldsSrc := String.intercalate "\n  " <|
-      s!"{mountedAtField} : List String" ::
+      s!"{mountedAtField} : Routing.MountPoint" ::
         rowGens.toList.map fun g => s!"{g.name.getId} : {g.patternsFieldTypeSrc}"
     elabCommandFromSource appId
       s!"structure {patternsTypeIdent.getId} where\n  {patternFieldsSrc}"
 
     let expose ← exposeSrc
     let patternValFieldsSrc := String.intercalate ", " <|
-      s!"{mountedAtField} := []" ::
+      s!"{mountedAtField} := .mk []" ::
         rowGens.toList.map fun g => s!"{g.name.getId} := {g.patternsValueSrc}"
     elabCommandFromSource appId <|
       expose ++ "def " ++ toString patternsValIdent.getId ++ " : " ++
@@ -290,7 +291,7 @@ elab_rules : command
     -- So a `Router` mount (`Router.lean`) can name a table by its `patterns` value.
     elabCommandFromSource appId <|
       s!"instance {appName ++ `instCoeMountPoint} : Coe " ++ toString patternsTypeIdent.getId ++
-        " Routing.MountPoint := ⟨fun p => ⟨p.mountedAt⟩⟩"
+        " Routing.MountPoint := ⟨(·.mountedAt)⟩"
 
     -- 5/6. `structure App.Links where name : LinkType [PathSeg literal] ...` and
     -- `def App.links : App.Links := { name := linkFor [PathSeg literal], ... }`.

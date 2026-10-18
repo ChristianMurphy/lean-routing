@@ -162,8 +162,19 @@ def mountSegs : List PathSeg → List PathSeg → List PathSeg
   | pre, [] => pre ++ [.lit ""]
   | pre, segs => pre ++ segs
 
-/-- The literal path prefix a `Router` mount serves, decoded, as a request path is. -/
+/-- The literal path prefix a `Router` mount serves, decoded, as a request path is. Like
+`PathSeg.lit`, it takes a proof that no segment is a `dotSegment`, since no request could reach
+one. -/
 structure MountPoint where
   segs : List String
+  valid : segs.all (!dotSegment ·) := by decide
+
+/-- A mount point at `segs`, unless one of them is a `dotSegment`. -/
+def MountPoint.ofSegs? (segs : List String) : Option MountPoint :=
+  if h : segs.all (!dotSegment ·) then some ⟨segs, h⟩ else none
+
+/-- `inner` mounted under `outer`. -/
+def MountPoint.append (outer inner : MountPoint) : MountPoint :=
+  ⟨outer.segs ++ inner.segs, by simp [List.all_append, outer.valid, inner.valid]⟩
 
 end Routing

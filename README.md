@@ -126,7 +126,7 @@ def site : Router :=
 def app : StatelessHandler := site.toHandler
 ```
 
-A mount takes every request under its root, and its entries are written against the mounted table's own unprefixed `patterns`. Its root is a table's `patterns` value, which records where that table is mounted (`AppName.patterns.blog.mountedAt = ["blog"]`, and `AppName.links.blog.mountedAt = "/blog"`), or one no table describes, written `⟨["t", tenant]⟩`. Mounts nest, each root prefixed by those enclosing it.
+A mount takes every request under its root, and its entries are written against the mounted table's own unprefixed `patterns`. Its root is a table's `patterns` value, which records where that table is mounted (`AppName.patterns.blog.mountedAt.segs = ["blog"]`, and `AppName.links.blog.mountedAt = "/blog"`), or a `MountPoint` no table describes. Like a pattern, a root cannot hold a `.` or `..` segment: a literal one such as `.mk ["admin"]` is checked at compile time, and one built at run time comes from `MountPoint.ofSegs? ["t", tenant]`, which returns `none` for an invalid segment. Mounts nest, each root prefixed by those enclosing it.
 
 A router serves a request with its first route that matches, else its first sub-router that takes it, else its `fallback` (a plain `404 Not Found` by default). A router takes a request if one of its routes matches it or one of its mounts or sub-routers takes it, so a miss under `/blog` above gets `blogNotFound`, behind `requireToken`. `matchedRoute?` reports the full pattern, mount roots included, whichever router served the request. As with `toHandler`, a mounted index requested without its slash gets a `308`.
 
@@ -170,9 +170,9 @@ Linking to a strict descendant of the current page needs its own segment repeate
 
 - Pattern round trip ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `parsePattern_renderPattern`): rendering a list of well-formed segments to a pattern string and parsing it back recovers exactly those segments.
 - Template stability ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `renderTemplate_kind_invariant`): changing a capture's kind leaves the endpoint template that `matchedPattern?` reports unchanged, so telemetry grouped by route survives `:id:Nat` becoming `:id:String`.
-- Router mounts ([test/RoutingTests/Router.lean](test/RoutingTests/Router.lean), `Route.under_segs`): a route under a `Router` mount has exactly the pattern a `route_table` mount gives it, so it matches what the table's links point at, and a root holding a `.` or `..` segment serves nothing.
+- Router mounts ([test/RoutingTests/Router.lean](test/RoutingTests/Router.lean), `Route.under_segs`): a route under a `Router` mount has exactly the pattern a `route_table` mount gives it, so it matches what the table's links point at.
 - Mount-prefix cancellation ([test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean), `relativeSegments_prefix`): a prefix shared by both endpoints drops out of a relative link, so a module's self-links are the same wherever it is mounted.
-- By construction: a handler's type is computed from its pattern, so a wrong-arity or wrong-type handler fails to compile, and `PathSeg.lit` takes a proof that its segment is neither `.` nor `..`. The `#guard_msgs` tests in [test/RoutingTests/](test/RoutingTests/) pin these, along with the compile-time rejection of malformed patterns, duplicate route names and captured mount prefixes.
+- By construction: a handler's type is computed from its pattern, so a wrong-arity or wrong-type handler fails to compile, and `PathSeg.lit` and `MountPoint` take a proof that no segment is `.` or `..`. The `#guard_msgs` tests in [test/RoutingTests/](test/RoutingTests/) pin these, along with the compile-time rejection of malformed patterns, duplicate route names and captured mount prefixes.
 
 ## Conformance tests
 
