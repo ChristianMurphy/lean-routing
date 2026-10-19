@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Std.Http.Server
-public import Routing.Route
+public import Routing.Trie
 
 public section
 
@@ -43,17 +43,33 @@ mounted index does (`mountSegs`, `Pattern.lean`). -/
 def wantsSlash (routes : List (Route Result)) (method : Method) (path : List String) : Bool :=
   path.getLast? != some "" && (matchTable routes method (path ++ [""])).isSome
 
+/-- `target` with a slash added to its path, query intact. -/
+def Internal.slashLocation? (target : RequestTarget) : Option Header.Value :=
+  let query := target.query
+  Header.Value.ofString?
+    (toString target.path ++ "/" ++ if query.isEmpty then "" else toString query)
+
 /-- Where to redirect a request that matched no route but `wantsSlash`: its target with the slash
 added, query intact. Serving the slashless form instead would break relative links from that
 page. -/
 def slashRedirect? (routes : List (Route Result)) (method : Method) (target : RequestTarget)
     (path : List String) : Option Header.Value :=
-  if wantsSlash routes method path then
-    let query := target.query
-    Header.Value.ofString?
-      (toString target.path ++ "/" ++ if query.isEmpty then "" else toString query)
-  else
-    none
+  if wantsSlash routes method path then Internal.slashLocation? target else none
+
+/-- The response to `request` from the route `found`, else a `308` when `slash ()` says a trailing
+slash would match. -/
+def Internal.respondTo (request : Request Body.Stream) (found : Option (MatchedRoute × Result))
+    (slash : Unit → Bool) : Option (ContextAsync (Response Body.Any)) :=
+  match found with
+  | some (matched, handler) => some do
+      let response ← handler { request with extensions := request.extensions.insert matched }
+      return { response with extensions := response.extensions.insert matched }
+  | none =>
+      if slash () then
+        (Internal.slashLocation? request.line.uri).map fun location =>
+          Response.withStatus .permanentRedirect |>.header Header.Name.location location |>.text ""
+      else
+        none
 
 /-- Decodes the request's method and path (`RequestTarget.path.toDecodedSegments` feeds `dispatch`
 via `matchTable`), tries each route in order, and applies the matched handler to the full request.
@@ -68,18 +84,25 @@ time matching happens, so the response is the only channel that travels back up 
 def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
     Option (ContextAsync (Response Body.Any)) :=
   let path := request.line.uri.path.toDecodedSegments.toList
-  match matchTable routes request.line.method path with
-  | some (matched, handler) => some do
-      let response ← handler { request with extensions := request.extensions.insert matched }
-      return { response with extensions := response.extensions.insert matched }
-  | none =>
-      (slashRedirect? routes request.line.method request.line.uri path).map fun location =>
-        Response.withStatus .permanentRedirect |>.header Header.Name.location location |>.text ""
+  let method := request.line.method
+  Internal.respondTo request (matchTable routes method path) fun _ =>
+    wantsSlash routes method path
 
-/-- Wires a route table into a `Std.Http.Server.Handler`, answering with `respond?`, else with
-`notFound`. -/
+/-- `respond?` through `index`, with one walk of its trie. -/
+def Internal.RouteIndex.respond? (index : Internal.RouteIndex Result)
+    (request : Request Body.Stream) : Option (ContextAsync (Response Body.Any)) :=
+  let path := request.line.uri.path.toDecodedSegments.toList
+  let method := request.line.method
+  let candidates := index.candidates path
+  Internal.respondTo request (index.first candidates method path) fun _ =>
+    index.wantsSlash candidates method path
+
+/-- Wires a route table into a `Std.Http.Server.Handler`, answering as `respond?` does, else with
+`notFound`. It builds a trie over `routes` to find each request's route, so build the handler
+once. -/
 def toHandler (routes : List (Route Result)) (notFound : Result := defaultNotFound) :
     StatelessHandler :=
-  Handler.ofFn fun request => (respond? routes request).getD (notFound request)
+  let index := Internal.RouteIndex.of routes
+  Handler.ofFn fun request => (index.respond? request).getD (notFound request)
 
 end Routing
