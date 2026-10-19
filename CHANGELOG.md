@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Find a request's route with a trie built once over the table, so matching tries only the routes shaped like the request.
+- A `Nat` capture matches only the digits a link renders, so `/users/042` gets a 404.
 
 ## [0.10.1] - 2026-10-18
 

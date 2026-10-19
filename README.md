@@ -64,7 +64,7 @@ Use `AppName.links.<name>` anywhere you need a URL for one of your routes, e.g. 
 #eval AppName.links.user 42     -- "/users/42"
 ```
 
-`AppName.links.user` is a function (`Nat → String`) because its pattern has one capture; a pattern with no captures gives a plain `String`. Literal segments and `String` captures are percent-encoded, so `AppName.links.userPost 1 "a b/c"` is `"/users/1/posts/a%20b%2Fc"`, which dispatches back to `"a b/c"`. No link can carry an empty, `.` or `..` segment, so a pattern cannot contain a `.` or `..` literal (`PathSeg.lit` requires a proof, and `PathSeg.lit?` checks a runtime string) and a `String` capture never matches any of the three; validate such values (usernames, say) where they are created.
+`AppName.links.user` is a function (`Nat → String`) because its pattern has one capture; a pattern with no captures gives a plain `String`. Literal segments and `String` captures are percent-encoded, so `AppName.links.userPost 1 "a b/c"` is `"/users/1/posts/a%20b%2Fc"`, which dispatches back to `"a b/c"`. A `Nat` capture matches only the digits a link renders, so `/users/042` is not a second path to user 42. No link can carry an empty, `.` or `..` segment, so a pattern cannot contain a `.` or `..` literal (`PathSeg.lit` requires a proof, and `PathSeg.lit?` checks a runtime string) and a `String` capture never matches any of the three; validate such values (usernames, say) where they are created.
 
 ### Hierarchical routes
 
@@ -169,6 +169,7 @@ Linking to a strict descendant of the current page needs its own segment repeate
 ## Formal verification
 
 - Pattern round trip ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `parsePattern_renderPattern`): rendering a list of well-formed segments to a pattern string and parsing it back recovers exactly those segments.
+- One path per number ([test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean), `parseNat?_toString`, `toString_of_parseNat?`): a `Nat` capture matches exactly the digits `toString` prints.
 - Template stability ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `renderTemplate_kind_invariant`): changing a capture's kind leaves the endpoint template that `matchedPattern?` reports unchanged, so telemetry grouped by route survives `:id:Nat` becoming `:id:String`.
 - Router mounts ([test/RoutingTests/Router.lean](test/RoutingTests/Router.lean), `Route.under_segs`): a route under a `Router` mount has exactly the pattern a `route_table` mount gives it, so it matches what the table's links point at.
 - Route trie ([test/RoutingTests/Trie.lean](test/RoutingTests/Trie.lean), `RouteIndex.first_of`, `RouteIndex.wantsSlash_of`, `RouteIndex.memory_of`): the trie that `toHandler` and `Router` build once over a table finds the route `matchTable` finds, for every table, method and path. It redirects to a trailing slash when `wantsSlash` would. It holds at most one node per pattern segment, plus the root, and each route's index once.

@@ -35,7 +35,7 @@ theorem fits_of_dispatch : ∀ (segs : List PathSeg) (h : HandlerType segs r) (p
   | .capture _ .nat :: rest, h, [], hd => by simp [dispatch] at hd
   | .capture _ .nat :: rest, h, p :: ps, hd => by
     simp only [dispatch] at hd
-    cases hn : p.toNat? with
+    cases hn : parseNat? p with
     | none => simp [hn] at hd
     | some n =>
       simp only [hn, Option.bind_some] at hd

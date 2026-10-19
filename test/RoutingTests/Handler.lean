@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import Routing.Handler
 import Routing.RelativeLink
 import Std.Http.Data.URI
+import Std.Data.String.ToNat
 import Plausible
 
 namespace Routing
@@ -16,10 +17,26 @@ private def userHandler : HandlerType userPattern String :=
 
 #guard dispatch userPattern userHandler ["users", "42"] = some "user #42"
 #guard dispatch userPattern userHandler ["users", "notanumber"] = none
+#guard dispatch userPattern userHandler ["users", "042"] = none -- only the digits a link renders
+#guard dispatch userPattern userHandler ["users", "4_2"] = none
 #guard dispatch userPattern userHandler ["posts", "42"] = none          -- literal mismatch
 #guard dispatch userPattern userHandler ["users"] = none                -- too few path segments
 #guard dispatch userPattern userHandler ["users", "42", "extra"] = none -- too many path segments
 #guard dispatch userPattern userHandler ["users", "42", ""] = some "user #42" -- trailing slash
+
+/-- A `Nat` capture matches the digits a link renders for it. -/
+theorem parseNat?_toString (n : Nat) : parseNat? (toString n) = some n := by
+  simp [parseNat?, Option.filter, toString, Nat.toNat?_repr]
+
+/-- A `Nat` capture matches nothing else, so each number has one path. -/
+theorem toString_of_parseNat? {s : String} {n : Nat} (h : parseNat? s = some n) :
+    toString n = s := by
+  unfold parseNat? Option.filter at h
+  split at h
+  · split at h
+    · cases h; simp_all
+    · cases h
+  · cases h
 
 -- Negative-compile regression: a wrong-arity handler against a real
 -- pattern is rejected at compile time.
