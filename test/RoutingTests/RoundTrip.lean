@@ -86,36 +86,30 @@ theorem requestSegments_joinEncoded (hr : ReadsBack) (xs : List String) (he : xs
   simpa [readsBack, he, hfits] using hr xs
 
 -- `encode_repr` reads the encoder's `ByteArray.foldl` as a list fold, which core has no lemma for.
-private theorem foldlM_loop_id {β : Type} (f : β → UInt8 → β) (as : ByteArray) (stop : Nat)
-    (h : stop ≤ as.size) : ∀ (i j : Nat) (b : β), stop - j ≤ i →
-    ByteArray.foldlM.loop (m := Id) (fun b a => pure (f b a)) as stop h i j b =
-      ((as.data.toList.drop j).take (stop - j)).foldl f b := by
-  intro i
-  induction i with
-  | zero =>
-    intro j b hi
-    unfold ByteArray.foldlM.loop
-    simp [show stop - j = 0 by omega]; rfl
+private theorem foldlM_loop_data {β : Type} {m : Type → Type} [Monad m] {f : β → UInt8 → m β}
+    {as : ByteArray} {stop : Nat} (h : stop ≤ as.size) (i j : Nat) (b : β) :
+    ByteArray.foldlM.loop f as stop h i j b = Array.foldlM.loop f as.data stop h i j b := by
+  induction i generalizing j b with
+  | zero => unfold ByteArray.foldlM.loop Array.foldlM.loop; rfl
   | succ i ih =>
-    intro j b hi
-    unfold ByteArray.foldlM.loop
-    by_cases hj : j < stop
-    · simp only [hj, dite_true]
-      have hjs : j < as.data.toList.length := by
-        rw [Array.length_toList]; exact Nat.lt_of_lt_of_le hj h
-      rw [List.drop_eq_getElem_cons hjs, show stop - j = (stop - (j + 1)) + 1 by omega,
-        List.take_succ_cons, List.foldl_cons]
-      exact ih (j + 1) (f b as[j]) (by omega)
-    · simp [hj, show stop - j = 0 by omega]; rfl
+    unfold ByteArray.foldlM.loop Array.foldlM.loop
+    split
+    · simp only [ih]; rfl
+    · rfl
+
+private theorem foldlM_data {β : Type} {m : Type → Type} [Monad m] {f : β → UInt8 → m β}
+    {init : β} {as : ByteArray} {start stop : Nat} :
+    as.foldlM f init start stop = as.data.foldlM f init start stop := by
+  unfold ByteArray.foldlM Array.foldlM
+  by_cases h : stop ≤ as.size
+  · have h' : stop ≤ as.data.size := h
+    simp only [h, h', ↓reduceDIte, foldlM_loop_data]
+  · have h' : ¬stop ≤ as.data.size := h
+    simp only [h, h', ↓reduceDIte, foldlM_loop_data]; rfl
 
 private theorem foldl_eq_foldl_toList {β : Type} (f : β → UInt8 → β) (init : β) (as : ByteArray) :
-    as.foldl f init = as.data.toList.foldl f init := by
-  unfold ByteArray.foldl ByteArray.foldlM
-  rw [dite_eq_left (Nat.le_refl _)]
-  show ByteArray.foldlM.loop (m := Id) _ as as.size _ (as.size - 0) 0 init = _
-  rw [foldlM_loop_id f as as.size (Nat.le_refl _) _ 0 init (by omega), Nat.sub_zero,
-    List.drop_zero, List.take_of_length_le (i := as.size) (l := as.data.toList)
-      (Nat.le_of_eq Array.length_toList)]
+    as.foldl f init = as.data.toList.foldl f init :=
+  (foldlM_data (m := Id)).trans (Array.foldl_toList f).symm
 
 private theorem digit_kept (b : UInt8) (h1 : 48 ≤ b.toNat) (h2 : b.toNat ≤ 57) :
     isAsciiByte b ∧ isPChar b := by
