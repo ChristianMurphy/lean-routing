@@ -6,6 +6,7 @@ import Routing.Handler
 import Routing.RelativeLink
 import Std.Http.Data.URI
 import Plausible
+import RoutingTests.RoundTrip
 
 namespace Routing
 
@@ -35,14 +36,7 @@ but is expected to have type
 def badArity : HandlerType userPattern String :=
   fun (_id : Nat) (_extra : String) => "oops"
 
--- These examples stand in for the theorem one really wants: that dispatching the path `linkFor`
--- renders recovers the very captures it was given. Both halves of that round trip bottom out in
--- string functions with no equational theory to work from: `pathSegments` is `String.splitOn`,
--- whose implementation walks byte positions with a hand-written termination argument, and a `.nat`
--- capture needs `String.toNat?` to invert `toString`. Neither round trip has lemmas in core, so
--- proving this means building both theories first. `Routing/Pattern.lean` sidesteps exactly this
--- by parsing over `List Char` structurally, which is why its round trip *is* proved
--- (`parsePattern_renderPattern`, `Pattern.lean`).
+-- Examples of the round trip that `requestSegments_linkFor` (`RoundTrip.lean`) proves.
 #guard linkFor ([] : List PathSeg) = "/"
 #guard linkFor [.lit "active"] = "/active"
 #guard linkFor [.lit "todos", .capture "id" .nat] 42 = "/todos/42"
@@ -86,6 +80,14 @@ private local instance (priority := high) : Plausible.Arbitrary String where
       (served (linkFor [.lit lit h, .capture "name" .string] name)) ==
       if unlinkable name then none else some name
   else true) = true)
+  { numInst := 1000, quiet := true }
+
+-- `ReadsBack` (`RoundTrip.lean`), which `requestSegments_linkFor` assumes. The second check starts
+-- every list with an empty segment, as in the link `//a`.
+#eval Plausible.Testable.check (∀ xs : List String, readsBack xs = true)
+  { numInst := 1000, quiet := true }
+
+#eval Plausible.Testable.check (∀ xs : List String, readsBack ("" :: xs) = true)
   { numInst := 1000, quiet := true }
 
 end Routing

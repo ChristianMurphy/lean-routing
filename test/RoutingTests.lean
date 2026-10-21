@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import RoutingTests.Pattern
 import RoutingTests.Route
+import RoutingTests.RoundTrip
 import RoutingTests.Handler
 import RoutingTests.RouteTable
 import RoutingTests.Server

@@ -80,9 +80,6 @@ private structure Compiled where
   takes : Method → List String → Bool
   handler : StatelessHandler
 
-private def decodedPath (target : RequestTarget) : List String :=
-  target.path.toDecodedSegments.toList
-
 mutual
 /-- Everything not depending on the request is computed here, once, middleware included. -/
 private def Router.compile : Router → Compiled
