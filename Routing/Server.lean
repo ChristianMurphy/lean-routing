@@ -71,8 +71,12 @@ def Internal.respondTo (request : Request Body.Stream) (found : Option (MatchedR
       else
         none
 
-/-- Decodes the request's method and path (`RequestTarget.path.toDecodedSegments` feeds `dispatch`
-via `matchTable`), tries each route in order, and applies the matched handler to the full request.
+/-- The decoded path segments that routes match against. -/
+def decodedPath (target : RequestTarget) : List String :=
+  target.path.toDecodedSegments.toList
+
+/-- Decodes the request's method and path (`decodedPath` feeds `dispatch` via `matchTable`), tries
+each route in order, and applies the matched handler to the full request.
 A request that matches nothing but would with a trailing slash gets a `308` there instead
 (`slashRedirect?`). `none` if neither.
 
@@ -83,7 +87,7 @@ middleware *wrapping* the router: such middleware has already passed its request
 time matching happens, so the response is the only channel that travels back up to it. -/
 def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
     Option (ContextAsync (Response Body.Any)) :=
-  let path := request.line.uri.path.toDecodedSegments.toList
+  let path := decodedPath request.line.uri
   let method := request.line.method
   Internal.respondTo request (matchTable routes method path) fun _ =>
     wantsSlash routes method path
@@ -91,7 +95,7 @@ def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
 /-- `respond?` through `index`, with one walk of its trie. -/
 def Internal.RouteIndex.respond? (index : Internal.RouteIndex Result)
     (request : Request Body.Stream) : Option (ContextAsync (Response Body.Any)) :=
-  let path := request.line.uri.path.toDecodedSegments.toList
+  let path := decodedPath request.line.uri
   let method := request.line.method
   let candidates := index.candidates path
   Internal.respondTo request (index.first candidates method path) fun _ =>

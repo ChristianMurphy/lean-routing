@@ -169,6 +169,7 @@ Linking to a strict descendant of the current page needs its own segment repeate
 ## Formal verification
 
 - Pattern round trip ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `parsePattern_renderPattern`): rendering a list of well-formed segments to a pattern string and parsing it back recovers exactly those segments.
+- Link round trip ([test/RoutingTests/RoundTrip.lean](test/RoutingTests/RoundTrip.lean), `requestSegments_linkFor`): `Std.Http` parses and decodes a link that `linkFor` builds. Dispatching the result against the link's own route calls the handler with the link's values. It assumes `ReadsBack`, a property of `Std.Http`'s parser and decoder fuzzed below, and leaves out the route `[.lit ""]`, whose link `/` reads back as no segments. It says nothing about browsers, which send a link starting with `//` to another host ([#9](https://github.com/paulbutcher/lean-routing/issues/9)). In a table, an earlier route can still match the link first.
 - Template stability ([test/RoutingTests/Pattern.lean](test/RoutingTests/Pattern.lean), `renderTemplate_kind_invariant`): changing a capture's kind leaves the endpoint template that `matchedPattern?` reports unchanged, so telemetry grouped by route survives `:id:Nat` becoming `:id:String`.
 - Router mounts ([test/RoutingTests/Router.lean](test/RoutingTests/Router.lean), `Route.under_segs`): a route under a `Router` mount has exactly the pattern a `route_table` mount gives it, so it matches what the table's links point at.
 - Route trie ([test/RoutingTests/Trie.lean](test/RoutingTests/Trie.lean), `RouteIndex.first_of`, `RouteIndex.wantsSlash_of`, `RouteIndex.memory_of`): the trie that `toHandler` and `Router` build once over a table finds the route `matchTable` finds, for every table, method and path. It redirects to a trailing slash when `wantsSlash` would. It holds at most one node per pattern segment, plus the root, and each route's index once.
@@ -186,10 +187,8 @@ There is no external suite for a router, so these check behaviour against the sp
 
 ## Property-based testing
 
-- [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean): [Plausible](https://github.com/leanprover-community/plausible) fuzzing, weighted towards `.`, `/`, `%`, `?`, `#`, `:` and space, of the link round trip through `Std.Http`'s encoder and decoder: dispatching the served form of a generated link recovers its `String` capture, or nothing when the capture is unlinkable. A property rather than a theorem because those functions have no lemmas relating them.
+- [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean): [Plausible](https://github.com/leanprover-community/plausible) fuzzing, weighted towards `.`, `/`, `%`, `?`, `#`, `:` and space, of the link round trip through `Std.Http`'s encoder and decoder: dispatching the served form of a generated link recovers its `String` capture, or nothing when the capture is unlinkable. It also fuzzes `ReadsBack`, the property of `Std.Http` that the proved link round trip assumes. Properties rather than theorems because those functions have no lemmas relating them.
 - [test/RoutingTests/RelativeLink.lean](test/RoutingTests/RelativeLink.lean): fuzzing `relativeUrl` against a model of RFC 3986 §5.2 resolution, that the reference it returns resolves back to its target, or to the target with a trailing slash, which `dispatch` accepts.
-
-The `linkFor`/`dispatch` round trip without `Std.Http` is not proved either, since `String.splitOn` and `String.toNat?` have no equational theory in core; examples in [test/RoutingTests/Handler.lean](test/RoutingTests/Handler.lean) stand in for it.
 
 ## License
 
