@@ -80,29 +80,25 @@ private structure Compiled where
   takes : Method → List String → Bool
   handler : StatelessHandler
 
-private def decodedPath (target : RequestTarget) : List String :=
-  target.path.toDecodedSegments.toList
-
 mutual
 /-- Everything not depending on the request is computed here, once, middleware included. -/
 private def Router.compile : Router → Compiled
   | { middlewares, routes, routers, fallback } =>
-    let index := Internal.RouteIndex.of (Entry.listToRoutes routes)
+    let index := RouteIndex.of (Entry.listToRoutes routes)
     let roots := routes.filterMap fun
       | .mount root _ => some root.segs
       | .route _ => none
     let subs := Router.compileAll routers
     let fallback := fallback.getD (Handler.ofFn defaultNotFound)
     let own (method : Method) (path : List String) : Bool :=
-      let candidates := index.candidates path
-      (index.first candidates method path).isSome || index.wantsSlash candidates method path
+      (index.matchTable method path).isSome || wantsSlash index method path
     let next (method : Method) (path : List String) : StatelessHandler :=
       match subs.find? (·.takes method path) with
       | some sub => sub.handler
       | none => fallback
     let inner : StatelessHandler :=
       { onRequest := fun request =>
-          match index.respond? request with
+          match respond? index request with
           | some response => response
           | none => (next request.line.method (decodedPath request.line.uri)).onRequest request
         -- A sub-router's middleware may refuse a body it would not accept, so ask the router

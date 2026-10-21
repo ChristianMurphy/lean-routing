@@ -27,7 +27,9 @@ status=0
 
 # `grep -c` rather than `grep -q`, and a count rather than an exit status: `-q` stops at the first
 # match and so kills the process feeding it, which under `pipefail` reads as "found nothing".
-frontend_hits() { grep -c 'l_Lean_Elab\|initialize_Lean_' || true; }
+# Module initialisers name the package; ordinary symbols name only the namespace, and core `Init`
+# declares things in `Lean.Elab` too, some of whose storage AArch64 links into every binary.
+frontend_hits() { grep -c 'initialize_Lean_' || true; }
 
 # 1. No compiled module of the library starts a Lean module at run time. Its *meta* initialiser
 #    does, which is the whole point of a `meta import`: the elaborator gets the frontend, and a
