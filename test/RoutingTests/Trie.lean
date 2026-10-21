@@ -2,7 +2,7 @@
 Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import Routing.Server
+import Routing.Trie
 
 namespace Routing.Internal
 
@@ -248,18 +248,19 @@ theorem mem_candidates_of_fits (routes : List (Route result)) {k : Nat} (hk : k 
     simpa [RouteIndex.of] using reaches_insertAll routes {} 0 k hk
   exact mem_candidates _ _ 0 k path hr hf
 
-/-- `first` finds what `matchTable` finds, from sorted candidates that hold every route matching
-`path`. -/
-theorem first_eq_matchTable (routes : List (Route result)) (cs : List Nat) (method : Method)
+/-- Trying the routes `cs` in order finds what `matchTable` finds, when `cs` is sorted and holds
+every route matching `path`. -/
+theorem findSome?_eq_matchTable (routes : List (Route result)) (cs : List Nat) (method : Method)
     (path : List String) (hs : cs.Pairwise (· ≤ ·))
     (hc : ∀ k (hk : k < routes.length), (routes[k].tryMatch method path).isSome → k ∈ cs) :
-    (RouteIndex.of routes).first cs method path = Routing.matchTable routes method path := by
+    (cs.findSome? fun i => (RouteIndex.of routes).routes[i]?.bind (·.tryMatch method path)) =
+      Routing.matchTable routes method path := by
   have hf :
       (fun (k : Nat) => (RouteIndex.of routes).routes[k]?.bind (Route.tryMatch · method path)) =
         fun (k : Nat) => routes[k]?.bind (Route.tryMatch · method path) := by
     funext k
     simp [RouteIndex.of]
-  simp only [RouteIndex.first, hf]
+  simp only [hf]
   rw [Routing.matchTable, findSome?_eq_range routes]
   cases h : (List.range routes.length).findSome?
       fun (k : Nat) => routes[k]?.bind (Route.tryMatch · method path) with
@@ -274,42 +275,6 @@ theorem first_eq_matchTable (routes : List (Route result)) (cs : List Nat) (meth
     refine findSome?_sorted hb hmin hs (hc m hm ?_)
     simp only [List.getElem?_eq_getElem hm, Option.bind_some] at hb
     simp [hb]
-
-/-- The trie finds the route `matchTable` finds. -/
-theorem RouteIndex.first_of (routes : List (Route result)) (method : Method)
-    (path : List String) :
-    (RouteIndex.of routes).first ((RouteIndex.of routes).candidates path) method path =
-      Routing.matchTable routes method path := by
-  refine first_eq_matchTable routes _ method path (candidates_sorted _ path) fun k hk hm => ?_
-  have hf := fits_of_dispatch _ _ _ (dispatch_of_tryMatch hm)
-  simp only [RouteIndex.candidates, List.mem_mergeSort]
-  split
-  · exact mem_candidates_of_fits routes hk hf
-  · rename_i hl
-    exact mem_candidates_of_fits routes hk (fits_append_slash _ _ hf (by simpa using hl))
-
-/-- The trie redirects to a trailing slash exactly when `wantsSlash` would. -/
-theorem RouteIndex.wantsSlash_of (routes : List (Route result)) (method : Method)
-    (path : List String) :
-    (RouteIndex.of routes).wantsSlash ((RouteIndex.of routes).candidates path) method path =
-      Routing.wantsSlash routes method path := by
-  simp only [RouteIndex.wantsSlash, Routing.wantsSlash]
-  by_cases hl : path.getLast? = some ""
-  · simp [hl]
-  · have := first_eq_matchTable routes ((RouteIndex.of routes).candidates path) method
-      (path ++ [""]) (candidates_sorted _ path) fun k hk hm => by
-        have hf := fits_of_dispatch _ _ _ (dispatch_of_tryMatch hm)
-        simp only [RouteIndex.candidates, List.mem_mergeSort]
-        split
-        · simp_all
-        · exact mem_candidates_of_fits routes hk hf
-    rw [this]
-
-/-- The trie answers a request as `respond?` does with a scan of the table. -/
-theorem RouteIndex.respond?_of (routes : List (Route Result))
-    (request : Std.Http.Request Std.Http.Body.Stream) :
-    (RouteIndex.of routes).respond? request = Routing.respond? routes request := by
-  simp only [RouteIndex.respond?, Routing.respond?, RouteIndex.first_of, RouteIndex.wantsSlash_of]
 
 theorem Trie.edges_insert : ∀ (segs : List PathSeg) (t : Trie) (i node : Nat),
     t.lits.size + t.captures.size + 1 = t.size →
@@ -437,6 +402,25 @@ theorem Trie.size_insertAll : ∀ (routes : List (Route result)) (t : Trie) (i :
     simp only [Trie.insertAll, List.map_cons, List.sum_cons]
     omega
 
+end Routing.Internal
+
+namespace Routing
+
+open Internal
+open Std.Http (Method)
+
+/-- The trie finds the route `matchTable` finds. -/
+theorem RouteIndex.matchTable_of (routes : List (Route result)) (method : Method)
+    (path : List String) :
+    (RouteIndex.of routes).matchTable method path = Routing.matchTable routes method path := by
+  refine findSome?_eq_matchTable routes _ method path (candidates_sorted _ path) fun k hk hm => ?_
+  have hf := fits_of_dispatch _ _ _ (dispatch_of_tryMatch hm)
+  simp only [RouteIndex.candidates, List.mem_mergeSort]
+  split
+  · exact mem_candidates_of_fits routes hk hf
+  · rename_i hl
+    exact mem_candidates_of_fits routes hk (fits_append_slash _ _ hf (by simpa using hl))
+
 /-- The trie's memory grows with the patterns' segments. Its `size`, the number of nodes, is at most
 one per segment plus the root. Each node but the root has one edge into it, and each route's index
 sits in one node's list, once. -/
@@ -449,18 +433,5 @@ theorem RouteIndex.memory_of (routes : List (Route result)) :
   · simpa [RouteIndex.of] using Trie.size_insertAll routes {} 0
   · simpa [RouteIndex.of] using
       Trie.Indexed.insertAll routes (t := {}) (i := 0) ⟨by simp, by simp, by simp, by simp⟩
-
-end Routing.Internal
-
-namespace Routing
-
-open Std Http Server
-
-/-- `toHandler` answers as `respond?` does, else with `notFound`. -/
-theorem toHandler_onRequest (routes : List (Route Result)) (notFound : Result)
-    (request : Request Body.Stream) :
-    (toHandler routes notFound).onRequest request =
-      (respond? routes request).getD (notFound request) := by
-  simp [toHandler, Handler.ofFn, Internal.RouteIndex.respond?_of]
 
 end Routing

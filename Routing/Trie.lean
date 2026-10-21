@@ -8,10 +8,9 @@ public import Routing.Route
 public import Std.Data.HashMap
 
 /-!
-The trie `toHandler` and `Router` build once over a route table, so that matching a request tries
-only the routes that could match it. Internal: `test/RoutingTests/Trie.lean` proves that
-`RouteIndex.first` answers as `matchTable` does and `RouteIndex.wantsSlash` as `wantsSlash` does, so
-`toHandler` answers as `respond?` does.
+`RouteIndex`, a route table with a trie built once over its patterns, so that matching a request
+tries only the routes that could match it. `test/RoutingTests/Trie.lean` proves that
+`RouteIndex.matchTable` finds the route `matchTable` finds.
 -/
 
 public section
@@ -24,7 +23,7 @@ open Std.Http (Method)
 
 /-- A segment trie over route patterns. Node `0` is the root. `lits` leads from a node along a
 literal segment to its child, and `captures` along a capture of either kind, since
-`RouteIndex.first` runs `Route.tryMatch` on each route the trie picks. `routes` holds the indexes
+`RouteIndex.matchTable` runs `Route.tryMatch` on each route the trie picks. `routes` holds the indexes
 of the routes whose pattern ends at a node. -/
 structure Trie where
   lits : Std.HashMap (Nat × String) Nat := {}
@@ -66,28 +65,29 @@ def Trie.candidates (t : Trie) (node : Nat) : (path : List String) → List Nat
       | none => []
     here ++ viaLit ++ viaCapture
 
-/-- A route table with a trie over its patterns. -/
+end Routing.Internal
+
+namespace Routing
+
+open Std.Http (Method)
+
+/-- A route table with a trie over its patterns. Build it once, with `RouteIndex.of`, and match
+requests against it with `respond?`. -/
 structure RouteIndex (result : Type) where
   routes : Array (Route result)
-  trie : Trie
+  trie : Internal.Trie
 
 def RouteIndex.of (routes : List (Route result)) : RouteIndex result :=
-  { routes := routes.toArray, trie := ({} : Trie).insertAll 0 routes }
+  { routes := routes.toArray, trie := ({} : Internal.Trie).insertAll 0 routes }
 
-/-- The routes that could match `path`, or `path` with a trailing slash added, in table order. One
-walk serves both `first` and `wantsSlash`. -/
+/-- The routes that could match `path`, or `path` with a trailing slash added, in table order. -/
 def RouteIndex.candidates (index : RouteIndex result) (path : List String) : List Nat :=
   let path := if path.getLast? == some "" then path else path ++ [""]
   (index.trie.candidates 0 path).mergeSort
 
-/-- The first of `candidates` that matches. -/
-def RouteIndex.first (index : RouteIndex result) (candidates : List Nat) (method : Method)
-    (path : List String) : Option (MatchedRoute × result) :=
-  candidates.findSome? fun i => index.routes[i]?.bind (·.tryMatch method path)
+/-- The first route that matches, as `matchTable` finds it on the table `index` was built from. -/
+def RouteIndex.matchTable (index : RouteIndex result) (method : Method) (path : List String) :
+    Option (MatchedRoute × result) :=
+  (index.candidates path).findSome? fun i => index.routes[i]?.bind (·.tryMatch method path)
 
-/-- Whether one of `candidates` would match `path` with a trailing slash added. -/
-def RouteIndex.wantsSlash (index : RouteIndex result) (candidates : List Nat) (method : Method)
-    (path : List String) : Bool :=
-  path.getLast? != some "" && (index.first candidates method (path ++ [""])).isSome
-
-end Routing.Internal
+end Routing
