@@ -82,13 +82,12 @@ private local instance (priority := high) : Plausible.Arbitrary String where
   else true) = true)
   { numInst := 1000, quiet := true }
 
--- `ReadsBack` and `EncodesDigits` (`RoundTrip.lean`), which `requestSegments_linkFor` assumes.
-#eval Plausible.Testable.check
-  (∀ xs : List String, (xs.head? != some "" && fits xs) → requestSegments (joinEncoded xs) = some xs)
+-- `ReadsBack` (`RoundTrip.lean`), which `requestSegments_linkFor` assumes. The second check starts
+-- every list with an empty segment, as in the link `//a`.
+#eval Plausible.Testable.check (∀ xs : List String, readsBack xs = true)
   { numInst := 1000, quiet := true }
 
-#eval Plausible.Testable.check
-  (∀ n : Nat, toString (Std.Http.URI.EncodedSegment.encode (toString n)) = toString n)
+#eval Plausible.Testable.check (∀ xs : List String, readsBack ("" :: xs) = true)
   { numInst := 1000, quiet := true }
 
 end Routing

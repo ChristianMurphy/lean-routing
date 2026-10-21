@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Add `decodedPath`, the decoded path segments that routes match a request against.
+
 ## [0.10.1] - 2026-10-18
 
 - Chore: bump dependencies.
