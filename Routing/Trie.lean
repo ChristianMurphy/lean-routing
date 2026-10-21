@@ -76,9 +76,11 @@ requests against it with `respond?`. -/
 structure RouteIndex (result : Type) where
   routes : Array (Route result)
   trie : Internal.Trie
+  /-- The trie is the one `RouteIndex.of` builds, so `RouteIndex.matchTable_eq` covers every index. -/
+  trie_eq : trie = ({} : Internal.Trie).insertAll 0 routes.toList
 
 def RouteIndex.of (routes : List (Route result)) : RouteIndex result :=
-  { routes := routes.toArray, trie := ({} : Internal.Trie).insertAll 0 routes }
+  { routes := routes.toArray, trie := ({} : Internal.Trie).insertAll 0 routes, trie_eq := by simp }
 
 /-- The routes that could match `path`, or `path` with a trailing slash added, in table order. -/
 def RouteIndex.candidates (index : RouteIndex result) (path : List String) : List Nat :=

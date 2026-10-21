@@ -421,6 +421,15 @@ theorem RouteIndex.matchTable_of (routes : List (Route result)) (method : Method
   · rename_i hl
     exact mem_candidates_of_fits routes hk (fits_append_slash _ _ hf (by simpa using hl))
 
+/-- Every `RouteIndex` finds the route `matchTable` finds on its table, since `trie_eq` ties its trie
+to the one `RouteIndex.of` builds. -/
+theorem RouteIndex.matchTable_eq (index : RouteIndex result) (method : Method)
+    (path : List String) :
+    index.matchTable method path = Routing.matchTable index.routes.toList method path := by
+  obtain ⟨routes, trie, h⟩ := index
+  subst h
+  simpa [RouteIndex.of] using RouteIndex.matchTable_of routes.toList method path
+
 /-- The trie's memory grows with the patterns' segments. Its `size`, the number of nodes, is at most
 one per segment plus the root. Each node but the root has one edge into it, and each route's index
 sits in one node's list, once. -/
