@@ -55,11 +55,19 @@ returning the rendered path. -/
   | .lit _ _ :: rest => LinkType rest
   | .capture _ kind :: rest => kind.type → LinkType rest
 
+/-- The absolute path for the already-encoded segments `parts`. A path whose first segment is empty
+starts `/./`, as the WHATWG URL standard writes one, since a reference starting `//` names a host;
+`decodedPath` drops the `.` again. -/
+def encodedPath (parts : List String) : String :=
+  match parts with
+  | "" :: _ :: _ => "/./" ++ String.intercalate "/" parts
+  | _ => "/" ++ String.intercalate "/" parts
+
 /-- Builds the `/`-joined path for `segs`, given the literal/rendered-capture parts collected so
 far. Literals and `.string` captures are percent-encoded, since `dispatch` matches decoded
 segments; the link dispatches back to a `.string` capture unless it is `unlinkable`. -/
 def linkParts : (segs : List PathSeg) → List String → LinkType segs
-  | [], parts => "/" ++ String.intercalate "/" parts
+  | [], parts => encodedPath parts
   | .lit s _ :: rest, parts =>
     linkParts rest (parts ++ [toString (Std.Http.URI.EncodedSegment.encode s)])
   | .capture _ .nat :: rest, parts => fun n => linkParts rest (parts ++ [toString n])
@@ -74,6 +82,6 @@ def linkFor (segs : List PathSeg) : LinkType segs := linkParts segs []
 /-- The link for a mount prefix's decoded literal segments, `"/"` for none, encoded as `linkParts`
 encodes a literal. -/
 def mountLink (segs : List String) : String :=
-  "/" ++ String.intercalate "/" (segs.map fun s => toString (Std.Http.URI.EncodedSegment.encode s))
+  encodedPath (segs.map fun s => toString (Std.Http.URI.EncodedSegment.encode s))
 
 end Routing

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - Add `decodedPath`, the decoded path segments that routes match a request against.
+- Start a link or slash redirect whose first segment is empty with `/./`, so browsers keep it on the same host.
+- `decodedPath` drops the `.` that such a link starts with.
 
 ## [0.10.1] - 2026-10-18
 
