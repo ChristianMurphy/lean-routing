@@ -166,12 +166,6 @@ private theorem toUTF8_repr (n : Nat) :
 theorem encode_repr (n : Nat) : toString (EncodedSegment.encode (toString n)) = toString n :=
   String.toByteArray_inj.mp (encode_digits _ (toUTF8_repr n))
 
-/-- `segs` does not start with an empty literal. A browser sends a link starting with `//` to
-another host (#9). -/
-def FirstNonEmpty : List PathSeg → Prop
-  | .lit s _ :: _ => s ≠ ""
-  | _ => True
-
 private theorem applyLink_linkParts :
     ∀ (segs : List PathSeg) (parts : List String) (args : Args segs),
     applyLink segs (linkParts segs parts) args =
@@ -190,10 +184,22 @@ theorem applyLink_linkFor (segs : List PathSeg) (args : Args segs) :
     applyLink segs (linkFor segs) args = joinEncoded (pathOf segs args) := by
   simpa [linkFor, joinEncoded] using applyLink_linkParts segs [] args
 
-theorem head_pathOf_ne_empty : ∀ (segs : List PathSeg) (args : Args segs),
-    Linkable segs args → FirstNonEmpty segs → (pathOf segs args).head? ≠ some ""
+private theorem pathOf_ne_nil : ∀ (segs : List PathSeg) (args : Args segs),
+    segs ≠ [] → pathOf segs args ≠ []
+  | .lit _ _ :: _, _, _ => by simp [pathOf]
+  | .capture _ .nat :: _, (_, _), _ => by simp [pathOf]
+  | .capture _ .string :: _, (_, _), _ => by simp [pathOf]
+
+theorem pathOf_ne_singleton_empty : ∀ (segs : List PathSeg) (args : Args segs),
+    Linkable segs args → (∀ h, segs ≠ [.lit "" h]) → pathOf segs args ≠ [""]
   | [], _, _, _ => by simp [pathOf]
-  | .lit _ _ :: _, _, _, hf => by simpa [pathOf, FirstNonEmpty] using hf
+  | [.lit s h], _, _, hn => by
+    intro he
+    simp [pathOf] at he
+    subst he
+    exact hn h rfl
+  | .lit _ _ :: s :: rest, args, _, _ => by
+    simpa [pathOf] using fun _ => pathOf_ne_nil (s :: rest) args (by simp)
   | .capture _ .nat :: _, (n, _), _, _ => by
     intro h
     have : (toString n).toNat? = some n := Nat.toNat?_repr n
@@ -202,15 +208,14 @@ theorem head_pathOf_ne_empty : ∀ (segs : List PathSeg) (args : Args segs),
     simp_all [pathOf, unlinkable]
 
 /-- A request for a link that `linkFor` builds reaches the route's handler with the values passed to
-`linkFor`. -/
+`linkFor`. The route `[.lit ""]` is left out because its link `/` reads back as `[]`. -/
 theorem requestSegments_linkFor (hr : ReadsBack) (segs : List PathSeg)
     (h : HandlerType segs r) (args : Args segs) (hl : Linkable segs args)
-    (hf : FirstNonEmpty segs) (hfits : fits (pathOf segs args)) :
+    (hn : ∀ h, segs ≠ [.lit "" h]) (hfits : fits (pathOf segs args)) :
     (requestSegments (applyLink segs (linkFor segs) args)).bind (dispatch segs h) =
       some (applyHandler segs h args) := by
-  have he : pathOf segs args ≠ [""] := fun h' =>
-    head_pathOf_ne_empty segs args hl hf (by simp [h'])
-  rw [applyLink_linkFor, requestSegments_joinEncoded hr _ he hfits, Option.bind_some,
-    dispatch_pathOf segs h args hl]
+  rw [applyLink_linkFor,
+    requestSegments_joinEncoded hr _ (pathOf_ne_singleton_empty segs args hl hn) hfits,
+    Option.bind_some, dispatch_pathOf segs h args hl]
 
 end Routing
