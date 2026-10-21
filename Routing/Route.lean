@@ -93,12 +93,13 @@ def Route.tryMatch (r : Route result) (method : Method) (path : List String) :
     Option (MatchedRoute × result) :=
   (r.tryDispatch method path).map (fun res => ({ method := r.method, segs := r.segs }, res))
 
-/-- `dispatchTable`, additionally reporting which route matched; the only place that fact is
-available, since a `result` on its own says nothing about the pattern that produced it.
+/-- `dispatchTable`, additionally reporting which route matched, since a `result` on its own says
+nothing about the pattern that produced it.
 
 Kept separate rather than either being defined in terms of the other, so `dispatchTable`'s callers
 keep the definition they already unfold. The two share their first-match-wins order, so any change
-to matching order belongs in both. -/
+to matching order belongs in both. `RouteIndex.matchTable` finds the same route with a trie
+(`RouteIndex.matchTable_of`, `test/RoutingTests/Trie.lean`). -/
 def matchTable (routes : List (Route result)) (method : Method) (path : List String) :
     Option (MatchedRoute × result) :=
   routes.findSome? (Route.tryMatch · method path)

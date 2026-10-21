@@ -7,6 +7,7 @@ module
 public import Routing.Pattern
 public import Routing.Handler
 public import Routing.Route
+public import Routing.Trie
 public import Routing.Server
 public import Routing.Router
 public import Routing.RouteTable
@@ -25,7 +26,9 @@ plain runtime data with no type-level encoding. From that *value*, `HandlerType 
 
 `Route`/`dispatchTable` (`Routing/Route.lean`) bundle a method, pattern, and handler into a table
 tried in order. `matchTable` adds the identity of the route that matched, which `toHandler`
-(`Routing/Server.lean`) publishes for a wrapping middleware to read back.
+(`Routing/Server.lean`) publishes for a wrapping middleware to read back. `toHandler` and `Router`
+find that route with a trie built once over the table (`Routing/Trie.lean`). It picks the route
+`matchTable` would, without trying every one.
 
 A `route_table` row can `mount` another table under a literal path prefix
 (`Routing/RouteTable.lean`); `mount_routes` (`Routing/RouteMount.lean`) does the same for a list of

@@ -5,7 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 module
 
 public import Std.Http.Server
-public import Routing.Route
+public import Routing.Trie
 
 public section
 
@@ -40,8 +40,8 @@ def matchedPattern? (extensions : Extensions) : Option String :=
 
 /-- Whether a request for `path` would match one of `routes` with a trailing slash added, as a
 mounted index does (`mountSegs`, `Pattern.lean`). -/
-def wantsSlash (routes : List (Route Result)) (method : Method) (path : List String) : Bool :=
-  path.getLast? != some "" && (matchTable routes method (path ++ [""])).isSome
+def wantsSlash (routes : RouteIndex result) (method : Method) (path : List String) : Bool :=
+  path.getLast? != some "" && (routes.matchTable method (path ++ [""])).isSome
 
 /-- `target` with a slash added, query intact, written as `encodedPath` writes a link. -/
 def slashLocation (target : RequestTarget) : String :=
@@ -50,7 +50,7 @@ def slashLocation (target : RequestTarget) : String :=
 
 /-- Where to redirect a request that matched no route but `wantsSlash`: `slashLocation`. Serving
 the slashless form instead would break relative links from that page. -/
-def slashRedirect? (routes : List (Route Result)) (method : Method) (target : RequestTarget)
+def slashRedirect? (routes : RouteIndex result) (method : Method) (target : RequestTarget)
     (path : List String) : Option Header.Value :=
   if wantsSlash routes method path then Header.Value.ofString? (slashLocation target) else none
 
@@ -62,8 +62,9 @@ def decodedPath (target : RequestTarget) : List String :=
   | "." :: "" :: rest => "" :: rest
   | segs => segs
 
-/-- Decodes the request's method and path (`decodedPath` feeds `dispatch` via `matchTable`), tries
-each route in order, and applies the matched handler to the full request.
+/-- Decodes the request's method and path (`decodedPath` feeds `dispatch` via
+`RouteIndex.matchTable`), finds the first route that matches, and applies its handler to the full
+request.
 A request that matches nothing but would with a trailing slash gets a `308` there instead
 (`slashRedirect?`). `none` if neither.
 
@@ -72,10 +73,10 @@ in *both* directions, because they reach different readers. The request copy is 
 matched handler and to anything the router calls into. The response copy is the one visible to
 middleware *wrapping* the router: such middleware has already passed its request downwards by the
 time matching happens, so the response is the only channel that travels back up to it. -/
-def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
+def respond? (routes : RouteIndex Result) (request : Request Body.Stream) :
     Option (ContextAsync (Response Body.Any)) :=
   let path := decodedPath request.line.uri
-  match matchTable routes request.line.method path with
+  match routes.matchTable request.line.method path with
   | some (matched, handler) => some do
       let response ← handler { request with extensions := request.extensions.insert matched }
       return { response with extensions := response.extensions.insert matched }
@@ -84,9 +85,10 @@ def respond? (routes : List (Route Result)) (request : Request Body.Stream) :
         Response.withStatus .permanentRedirect |>.header Header.Name.location location |>.text ""
 
 /-- Wires a route table into a `Std.Http.Server.Handler`, answering with `respond?`, else with
-`notFound`. -/
+`notFound`. It builds a `RouteIndex` over `routes`, so build the handler once. -/
 def toHandler (routes : List (Route Result)) (notFound : Result := defaultNotFound) :
     StatelessHandler :=
+  let routes := RouteIndex.of routes
   Handler.ofFn fun request => (respond? routes request).getD (notFound request)
 
 end Routing
