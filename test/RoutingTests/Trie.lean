@@ -2,7 +2,7 @@
 Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
-import Routing.Trie
+import Routing.Server
 
 namespace Routing.Internal
 
@@ -288,12 +288,12 @@ theorem RouteIndex.first_of (routes : List (Route result)) (method : Method)
   · rename_i hl
     exact mem_candidates_of_fits routes hk (fits_append_slash _ _ hf (by simpa using hl))
 
-/-- The trie redirects to a trailing slash exactly when a scan with `matchTable` would. -/
+/-- The trie redirects to a trailing slash exactly when `wantsSlash` would. -/
 theorem RouteIndex.wantsSlash_of (routes : List (Route result)) (method : Method)
     (path : List String) :
     (RouteIndex.of routes).wantsSlash ((RouteIndex.of routes).candidates path) method path =
-      (path.getLast? != some "" && (Routing.matchTable routes method (path ++ [""])).isSome) := by
-  simp only [RouteIndex.wantsSlash]
+      Routing.wantsSlash routes method path := by
+  simp only [RouteIndex.wantsSlash, Routing.wantsSlash]
   by_cases hl : path.getLast? = some ""
   · simp [hl]
   · have := first_eq_matchTable routes ((RouteIndex.of routes).candidates path) method
@@ -304,6 +304,12 @@ theorem RouteIndex.wantsSlash_of (routes : List (Route result)) (method : Method
         · simp_all
         · exact mem_candidates_of_fits routes hk hf
     rw [this]
+
+/-- The trie answers a request as `respond?` does with a scan of the table. -/
+theorem RouteIndex.respond?_of (routes : List (Route Result))
+    (request : Std.Http.Request Std.Http.Body.Stream) :
+    (RouteIndex.of routes).respond? request = Routing.respond? routes request := by
+  simp only [RouteIndex.respond?, Routing.respond?, RouteIndex.first_of, RouteIndex.wantsSlash_of]
 
 theorem Trie.edges_insert : ∀ (segs : List PathSeg) (t : Trie) (i node : Nat),
     t.lits.size + t.captures.size + 1 = t.size →
@@ -445,3 +451,16 @@ theorem RouteIndex.memory_of (routes : List (Route result)) :
       Trie.Indexed.insertAll routes (t := {}) (i := 0) ⟨by simp, by simp, by simp, by simp⟩
 
 end Routing.Internal
+
+namespace Routing
+
+open Std Http Server
+
+/-- `toHandler` answers as `respond?` does, else with `notFound`. -/
+theorem toHandler_onRequest (routes : List (Route Result)) (notFound : Result)
+    (request : Request Body.Stream) :
+    (toHandler routes notFound).onRequest request =
+      (respond? routes request).getD (notFound request) := by
+  simp [toHandler, Handler.ofFn, Internal.RouteIndex.respond?_of]
+
+end Routing

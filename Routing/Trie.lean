@@ -10,7 +10,8 @@ public import Std.Data.HashMap
 /-!
 The trie `toHandler` and `Router` build once over a route table, so that matching a request tries
 only the routes that could match it. Internal: `test/RoutingTests/Trie.lean` proves that
-`RouteIndex.first` and `RouteIndex.wantsSlash` answer as `matchTable` does.
+`RouteIndex.first` answers as `matchTable` does and `RouteIndex.wantsSlash` as `wantsSlash` does, so
+`toHandler` answers as `respond?` does.
 -/
 
 public section

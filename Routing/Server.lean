@@ -40,7 +40,8 @@ def matchedPattern? (extensions : Extensions) : Option String :=
 
 /-- Whether a request for `path` would match one of `routes` with a trailing slash added, as a
 mounted index does (`mountSegs`, `Pattern.lean`). -/
-def wantsSlash (routes : List (Route Result)) (method : Method) (path : List String) : Bool :=
+def wantsSlash {result : Type} (routes : List (Route result)) (method : Method) (path : List String) :
+    Bool :=
   path.getLast? != some "" && (matchTable routes method (path ++ [""])).isSome
 
 /-- `target` with a slash added to its path, query intact. -/
