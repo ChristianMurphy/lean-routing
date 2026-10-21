@@ -82,9 +82,8 @@ structure RouteIndex (result : Type) where
 def RouteIndex.of (routes : List (Route result)) : RouteIndex result :=
   { routes := routes.toArray, trie := ({} : Internal.Trie).insertAll 0 routes, trie_eq := by simp }
 
-/-- The routes that could match `path`, or `path` with a trailing slash added, in table order. -/
+/-- The routes that could match `path`, in table order. -/
 def RouteIndex.candidates (index : RouteIndex result) (path : List String) : List Nat :=
-  let path := if path.getLast? == some "" then path else path ++ [""]
   (index.trie.candidates 0 path).mergeSort
 
 /-- The first route that matches, as `matchTable` finds it on the table `index` was built from. -/

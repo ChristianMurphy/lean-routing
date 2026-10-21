@@ -220,21 +220,6 @@ theorem dispatch_of_tryMatch {r : Route result} {method : Method} {path : List S
   · cases hd : dispatch r.segs r.handler path <;> simp_all
   · simp at h
 
-theorem fits_append_slash : ∀ (segs : List PathSeg) (path : List String),
-    Fits segs path → path.getLast? ≠ some "" → Fits segs (path ++ [""])
-  | [], [], _, _ => trivial
-  | [], [p], hf, hl => by
-    by_cases hp : p = ""
-    · subst hp; simp at hl
-    · simp [Fits, hp] at hf
-  | [], _ :: _ :: _, hf, _ => by simp [Fits] at hf
-  | .lit _ _ :: _, [], hf, _ => by simp [Fits] at hf
-  | .lit _ _ :: rest, p :: ps, ⟨hs, hf⟩, hl =>
-    ⟨hs, fits_append_slash rest ps hf (by cases ps <;> simp_all)⟩
-  | .capture _ _ :: _, [], hf, _ => by simp [Fits] at hf
-  | .capture _ _ :: rest, p :: ps, hf, hl =>
-    fits_append_slash rest ps hf (by cases ps <;> simp_all)
-
 theorem candidates_sorted (index : RouteIndex result) (path : List String) :
     (index.candidates path).Pairwise (· ≤ ·) :=
   (List.pairwise_mergeSort (le := fun a b => decide (a ≤ b))
@@ -416,10 +401,7 @@ theorem RouteIndex.matchTable_of (routes : List (Route result)) (method : Method
   refine findSome?_eq_matchTable routes _ method path (candidates_sorted _ path) fun k hk hm => ?_
   have hf := fits_of_dispatch _ _ _ (dispatch_of_tryMatch hm)
   simp only [RouteIndex.candidates, List.mem_mergeSort]
-  split
-  · exact mem_candidates_of_fits routes hk hf
-  · rename_i hl
-    exact mem_candidates_of_fits routes hk (fits_append_slash _ _ hf (by simpa using hl))
+  exact mem_candidates_of_fits routes hk hf
 
 /-- Every `RouteIndex` finds the route `matchTable` finds on its table, since `trie_eq` ties its trie
 to the one `RouteIndex.of` builds. -/

@@ -46,7 +46,7 @@ def wantsSlash (routes : RouteIndex result) (method : Method) (path : List Strin
 /-- Where to redirect a request that matched no route but `wantsSlash`: its target with the slash
 added, query intact. Serving the slashless form instead would break relative links from that
 page. -/
-def slashRedirect? (routes : RouteIndex Result) (method : Method) (target : RequestTarget)
+def slashRedirect? (routes : RouteIndex result) (method : Method) (target : RequestTarget)
     (path : List String) : Option Header.Value :=
   if wantsSlash routes method path then
     let query := target.query
