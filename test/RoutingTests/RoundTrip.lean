@@ -59,7 +59,7 @@ def requestSegments (target : String) : Option (List String) :=
 
 /-- A link to the decoded segments `xs`, each percent-encoded as `linkParts` encodes it. -/
 def joinEncoded (xs : List String) : String :=
-  "/" ++ "/".intercalate (xs.map fun x => toString (URI.EncodedSegment.encode x))
+  encodedPath (xs.map fun x => toString (URI.EncodedSegment.encode x))
 
 /-- Whether `joinEncoded xs` is within `Std.Http`'s default limits on a path and on a request
 target. -/
@@ -72,9 +72,9 @@ def fits (xs : List String) : Bool :=
     (joinEncoded xs).utf8ByteSize ≤ ({} : Std.Http.Config).maxUriLength
 
 /-- Whether `Std.Http` reads the link for `xs` back as `xs`. The link `/` for `[""]` reads back as
-`[]`, hence the first condition. -/
+`[]`, and `decodedPath` drops a `.` before an empty first segment, hence the first two conditions. -/
 def readsBack (xs : List String) : Bool :=
-  xs == [""] || !fits xs || requestSegments (joinEncoded xs) == some xs
+  xs == [""] || xs.take 2 == [".", ""] || !fits xs || requestSegments (joinEncoded xs) == some xs
 
 /-- `readsBack` holds for every list. `Std.Http`'s parser and decoder have no lemmas, so
 `Handler.lean` checks this as a property. -/
@@ -82,8 +82,8 @@ def ReadsBack : Prop :=
   ∀ xs, readsBack xs = true
 
 theorem requestSegments_joinEncoded (hr : ReadsBack) (xs : List String) (he : xs ≠ [""])
-    (hfits : fits xs) : requestSegments (joinEncoded xs) = some xs := by
-  simpa [readsBack, he, hfits] using hr xs
+    (hd : xs.take 2 ≠ [".", ""]) (hfits : fits xs) : requestSegments (joinEncoded xs) = some xs := by
+  simpa [readsBack, he, hd, hfits] using hr xs
 
 -- `encode_repr` reads the encoder's `ByteArray.foldl` as a list fold, which core has no lemma for.
 private theorem foldlM_loop_data {β : Type} {m : Type → Type} [Monad m] {f : β → UInt8 → m β}
@@ -169,8 +169,7 @@ theorem encode_repr (n : Nat) : toString (EncodedSegment.encode (toString n)) = 
 private theorem applyLink_linkParts :
     ∀ (segs : List PathSeg) (parts : List String) (args : Args segs),
     applyLink segs (linkParts segs parts) args =
-      "/" ++ "/".intercalate
-        (parts ++ (pathOf segs args).map fun x => toString (URI.EncodedSegment.encode x))
+      encodedPath (parts ++ (pathOf segs args).map fun x => toString (URI.EncodedSegment.encode x))
   | [], parts, _ => by simp [applyLink, linkParts, pathOf]
   | .lit _ _ :: rest, parts, args =>
     (applyLink_linkParts rest _ args).trans (by simp [pathOf])
@@ -207,6 +206,23 @@ theorem pathOf_ne_singleton_empty : ∀ (segs : List PathSeg) (args : Args segs)
   | .capture _ .string :: _, (_, _), ⟨_, _⟩, _ => by
     simp_all [pathOf, unlinkable]
 
+private theorem pathOf_head_ne_dot : ∀ (segs : List PathSeg) (args : Args segs),
+    Linkable segs args → (pathOf segs args).head? ≠ some "."
+  | [], _, _ => by simp [pathOf]
+  | .lit s h :: _, _, _ => by
+    simp only [pathOf, List.head?_cons, ne_eq, Option.some.injEq]
+    rintro rfl
+    simp [dotSegment] at h
+  | .capture _ .nat :: _, (n, _), _ => by
+    simp only [pathOf, List.head?_cons, ne_eq, Option.some.injEq]
+    intro h
+    have := toUTF8_repr n 46 (by rw [show toString n = "." from h]; decide)
+    simp at this
+  | .capture _ .string :: _, (_, _), ⟨hs, _⟩ => by
+    simp only [pathOf, List.head?_cons, ne_eq, Option.some.injEq]
+    rintro rfl
+    simp [unlinkable, dotSegment] at hs
+
 /-- A request for a link that `linkFor` builds reaches the route's handler with the values passed to
 `linkFor`. The route `[.lit ""]` is left out because its link `/` reads back as `[]`. -/
 theorem requestSegments_linkFor (hr : ReadsBack) (segs : List PathSeg)
@@ -215,7 +231,10 @@ theorem requestSegments_linkFor (hr : ReadsBack) (segs : List PathSeg)
     (requestSegments (applyLink segs (linkFor segs) args)).bind (dispatch segs h) =
       some (applyHandler segs h args) := by
   rw [applyLink_linkFor,
-    requestSegments_joinEncoded hr _ (pathOf_ne_singleton_empty segs args hl hn) hfits,
+    requestSegments_joinEncoded hr _ (pathOf_ne_singleton_empty segs args hl hn)
+      (fun h => pathOf_head_ne_dot segs args hl (by
+        match hp : pathOf segs args, h with
+        | _ :: _ :: _, h => simp_all)) hfits,
     Option.bind_some, dispatch_pathOf segs h args hl]
 
 end Routing
