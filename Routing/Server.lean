@@ -43,21 +43,24 @@ mounted index does (`mountSegs`, `Pattern.lean`). -/
 def wantsSlash (routes : RouteIndex result) (method : Method) (path : List String) : Bool :=
   path.getLast? != some "" && (routes.matchTable method (path ++ [""])).isSome
 
-/-- Where to redirect a request that matched no route but `wantsSlash`: its target with the slash
-added, query intact. Serving the slashless form instead would break relative links from that
-page. -/
+/-- `target` with a slash added, query intact, written as `encodedPath` writes a link. -/
+def slashLocation (target : RequestTarget) : String :=
+  encodedPath (target.path.segments.toList.map toString ++ [""]) ++
+    if target.query.isEmpty then "" else toString target.query
+
+/-- Where to redirect a request that matched no route but `wantsSlash`: `slashLocation`. Serving
+the slashless form instead would break relative links from that page. -/
 def slashRedirect? (routes : RouteIndex result) (method : Method) (target : RequestTarget)
     (path : List String) : Option Header.Value :=
-  if wantsSlash routes method path then
-    let query := target.query
-    Header.Value.ofString?
-      (toString target.path ++ "/" ++ if query.isEmpty then "" else toString query)
-  else
-    none
+  if wantsSlash routes method path then Header.Value.ofString? (slashLocation target) else none
 
-/-- The decoded path segments that routes match against. -/
+/-- The decoded path segments that routes match against, without the `.` that `encodedPath` writes
+before an empty first segment. A client removes that `.` before sending, and one that sends the
+link as written still matches. A `.` anywhere else stays, so `/./x` matches no route. -/
 def decodedPath (target : RequestTarget) : List String :=
-  target.path.toDecodedSegments.toList
+  match target.path.toDecodedSegments.toList with
+  | "." :: "" :: rest => "" :: rest
+  | segs => segs
 
 /-- Decodes the request's method and path (`decodedPath` feeds `dispatch` via
 `RouteIndex.matchTable`), finds the first route that matches, and applies its handler to the full

@@ -6,6 +6,8 @@
 - Find a request's route with a trie built once over the table, so matching tries only the routes shaped like the request.
 - `respond?`, `wantsSlash` and `slashRedirect?` take a `RouteIndex`, built once with `RouteIndex.of`, in place of a list of routes.
 - A `Nat` capture matches only the digits a link renders, so `/users/042` gets a 404.
+- Start a link or slash redirect whose first segment is empty with `/./`, so browsers keep it on the same host.
+- `decodedPath` drops the `.` that such a link starts with.
 
 ## [0.10.1] - 2026-10-18
 

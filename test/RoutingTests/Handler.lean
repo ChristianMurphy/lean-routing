@@ -52,10 +52,10 @@ private def namePattern : List PathSeg := [.lit "users", .capture "name" .string
 
 private def nameHandler : HandlerType namePattern String := fun (name : String) => name
 
-/-- The segments a server dispatches on: parsed and percent-decoded by `Std.Http`, as `toHandler`
-does with a request's target. -/
+/-- The segments a server dispatches on: `requestSegments`, as `toHandler` reads a request's
+target. -/
 private def served (link : String) : List String :=
-  ((Std.Http.RequestTarget.parse? link).map (·.path.toDecodedSegments.toList)).getD []
+  (requestSegments link).getD []
 
 private def literalRoundTrips (s : String) (h : dotSegment s = false := by decide) : Bool :=
   dispatch [.lit "docs", .lit s h] "ok" (served (linkFor [.lit "docs", .lit s h])) == some "ok"
@@ -78,11 +78,14 @@ private local instance (priority := high) : Plausible.Arbitrary String where
 -- no lemmas relating them.
 #eval Plausible.Testable.check
   (∀ lit name : String, (if h : dotSegment lit = false then
-    lit == "" || dispatch [.lit lit h, .capture "name" .string] (fun name => name)
+    dispatch [.lit lit h, .capture "name" .string] (fun name => name)
       (served (linkFor [.lit lit h, .capture "name" .string] name)) ==
       if unlinkable name then none else some name
   else true) = true)
   { numInst := 1000, quiet := true }
+
+-- `readsBack` needs its second condition, since `decodedPath` drops this `.`.
+#guard requestSegments (joinEncoded [".", "", "a"]) == some ["", "a"]
 
 -- `ReadsBack` (`RoundTrip.lean`), which `requestSegments_linkFor` assumes. The second check starts
 -- every list with an empty segment, as in the link `//a`.
