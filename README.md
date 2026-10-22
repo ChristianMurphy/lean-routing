@@ -64,7 +64,7 @@ Use `AppName.links.<name>` anywhere you need a URL for one of your routes, e.g. 
 #eval AppName.links.user 42     -- "/users/42"
 ```
 
-`AppName.links.user` is a function (`Nat → String`) because its pattern has one capture; a pattern with no captures gives a plain `String`. Literal segments and `String` captures are percent-encoded, so `AppName.links.userPost 1 "a b/c"` is `"/users/1/posts/a%20b%2Fc"`, which dispatches back to `"a b/c"`. A link whose first segment is empty starts with `/./`, since one starting with `//` would name another host. No link can carry an empty, `.` or `..` segment, so a pattern cannot contain a `.` or `..` literal (`PathSeg.lit` requires a proof, and `PathSeg.lit?` checks a runtime string) and a `String` capture never matches any of the three; validate such values (usernames, say) where they are created.
+`AppName.links.user` is a function (`Nat → String`) because its pattern has one capture; a pattern with no captures gives a plain `String`. Literal segments and `String` captures are percent-encoded, so `AppName.links.userPost 1 "a b/c"` is `"/users/1/posts/a%20b%2Fc"`, which dispatches back to `"a b/c"`. A `Nat` capture matches only the digits a link renders, so `/users/042` is not a second path to user 42. A link whose first segment is empty starts with `/./`, since one starting with `//` would name another host. No link can carry an empty, `.` or `..` segment, so a pattern cannot contain a `.` or `..` literal (`PathSeg.lit` requires a proof, and `PathSeg.lit?` checks a runtime string) and a `String` capture never matches any of the three; validate such values (usernames, say) where they are created.
 
 ### Hierarchical routes
 
