@@ -23,7 +23,7 @@ def HandlerType (segs : List PathSeg) (result : Type) : Type :=
 
 /-- A `Nat` capture's value, accepting only the digits `toString` prints, so each number has one
 path. -/
-def parseNat? (s : String) : Option Nat :=
+def Internal.parseNat? (s : String) : Option Nat :=
   s.toNat?.filter (toString · == s)
 
 /-- The `String` captures no link can carry as one path segment: a `dotSegment`, or an empty one,
@@ -49,7 +49,7 @@ def dispatch {result : Type} :
   | [], h, [""] => some h
   | .lit s _ :: rest, h, p :: ps => if s == p then dispatch rest h ps else none
   | .capture _ .nat :: rest, h, p :: ps =>
-    (parseNat? p).bind (fun n => dispatch rest (h n) ps)
+    (Internal.parseNat? p).bind (fun n => dispatch rest (h n) ps)
   | .capture _ .string :: rest, h, p :: ps =>
     if unlinkable p then none else dispatch rest (h p) ps
   | _, _, _ => none

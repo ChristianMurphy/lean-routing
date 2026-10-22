@@ -41,18 +41,13 @@ def Linkable : (segs : List PathSeg) → Args segs → Prop
   | .capture _ .string :: rest, (s, args) => unlinkable s = false ∧ Linkable rest args
 
 /-- A `Nat` capture matches the digits a link renders for it. -/
-theorem parseNat?_toString (n : Nat) : parseNat? (toString n) = some n := by
+theorem Internal.parseNat?_toString (n : Nat) : parseNat? (toString n) = some n := by
   simp [parseNat?, Option.filter, toString, Nat.toNat?_repr]
 
 /-- A `Nat` capture matches nothing else, so each number has one path. -/
-theorem toString_of_parseNat? {s : String} {n : Nat} (h : parseNat? s = some n) :
+theorem Internal.toString_of_parseNat? {s : String} {n : Nat} (h : parseNat? s = some n) :
     toString n = s := by
-  unfold parseNat? Option.filter at h
-  split at h
-  · split at h
-    · cases h; simp_all
-    · cases h
-  · cases h
+  simp_all [parseNat?, Option.filter_eq_some_iff]
 
 theorem dispatch_pathOf : ∀ (segs : List PathSeg) (h : HandlerType segs r) (args : Args segs),
     Linkable segs args → dispatch segs h (pathOf segs args) = some (applyHandler segs h args)
@@ -61,7 +56,7 @@ theorem dispatch_pathOf : ∀ (segs : List PathSeg) (h : HandlerType segs r) (ar
     simp only [pathOf, dispatch, BEq.rfl, ite_true, applyHandler]
     exact dispatch_pathOf rest h args hl
   | .capture _ .nat :: rest, h, (n, args), hl => by
-    simp only [pathOf, dispatch, parseNat?_toString, Option.bind_some, applyHandler]
+    simp only [pathOf, dispatch, Internal.parseNat?_toString, Option.bind_some, applyHandler]
     exact dispatch_pathOf rest (h n) args hl
   | .capture _ .string :: rest, h, (s, args), ⟨hs, hl⟩ => by
     simp only [pathOf, dispatch, hs, Bool.false_eq_true, ite_false, applyHandler]
