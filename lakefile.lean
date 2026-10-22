@@ -6,7 +6,7 @@ import Lake
 open Lake DSL
 
 package routing where
-  version := v!"0.10.1"
+  version := v!"0.11.0"
 
 @[default_target]
 lean_lib Routing
