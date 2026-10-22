@@ -47,17 +47,19 @@ namespace Routing
 open Lean Lean.Elab Lean.Elab.Command
 
 declare_syntax_cat routeTableRow
-syntax ident ":=" str : routeTableRow
-syntax ident ":=" "mount" str ident : routeTableRow
+syntax ident " := " str : routeTableRow
+syntax ident " := " "mount " str ppSpace ident : routeTableRow
 
 /-- Factored out into its own named parser, rather than inlined into `routeTableCmd` below, because
 the `,*,?` trailing-comma sugar only elaborates inside a `syntax name := ...` alias. Same shape core
-uses for `rwRuleSeq` (`Init/Tactics.lean`). -/
-syntax routeTableRows := "[" withoutPosition(routeTableRow,*,?) "]"
+uses for `rwRuleSeq` (`Init/Tactics.lean`). The sugar is spelled out as `sepBy` so that a printed
+table puts each row on its own line. -/
+syntax routeTableRows :=
+  "[" ppIndent(withoutPosition(sepBy(routeTableRow, ",", ", " ppLine, allowTrailingSep))) "]"
 
 /-- See the module docstring. `App` names the generated `App.Patterns`/`App.patterns`/
 `App.Links`/`App.links` declarations. -/
-syntax (name := routeTableCmd) "route_table" ident routeTableRows : command
+syntax (name := routeTableCmd) "route_table " ident ppSpace routeTableRows : command
 
 /-- A row is either a plain pattern (`.leaf`) or a mount of another app's whole table under a
 literal prefix (`.mount`). -/

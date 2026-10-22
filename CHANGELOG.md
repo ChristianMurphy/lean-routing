@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- A printed `route_table` puts each row on its own line, with spaces around `:=`.
+
 ## [0.11.0] - 2026-10-22
 
 - Add `decodedPath`, the decoded path segments that routes match a request against.

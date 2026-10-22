@@ -46,4 +46,23 @@ error: invalid route pattern "not-a-valid-pattern"
 route_table RouteTableTestInvalid
   [ bad := "not-a-valid-pattern" ]
 
+-- A printed table keeps one row per line, with spaces around `:=`, so formatters built on Lean's
+-- pretty-printer leave tables readable.
+section
+open Lean Elab Command
+
+/--
+info: route_table App [index := "/",
+    user := "/users/:id:Nat",
+    api := mount "/api" Api]
+-/
+#guard_msgs in
+#eval show CommandElabM Unit from do
+  let src := "route_table App [ index := \"/\", user := \"/users/:id:Nat\", " ++
+    "api := mount \"/api\" Api ]"
+  let .ok stx := Parser.runParserCategory (← getEnv) `command src | throwError "parse failed"
+  logInfo (← liftCoreM <| PrettyPrinter.ppCommand ⟨stx⟩)
+
+end
+
 end Routing
