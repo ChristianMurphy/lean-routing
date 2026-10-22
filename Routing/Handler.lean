@@ -21,6 +21,11 @@ def HandlerType (segs : List PathSeg) (result : Type) : Type :=
   | .lit _ _ :: rest => HandlerType rest result
   | .capture _ kind :: rest => kind.type → HandlerType rest result
 
+/-- A `Nat` capture's value, accepting only the digits `toString` prints, so each number has one
+path. -/
+def Internal.parseNat? (s : String) : Option Nat :=
+  s.toNat?.filter (toString · == s)
+
 /-- The `String` captures no link can carry as one path segment: a `dotSegment`, or an empty one,
 which many proxies collapse and which, as the last segment, cannot be told from a trailing slash. -/
 def unlinkable (s : String) : Bool :=
@@ -43,7 +48,8 @@ def dispatch {result : Type} :
   | [], h, [] => some h
   | [], h, [""] => some h
   | .lit s _ :: rest, h, p :: ps => if s == p then dispatch rest h ps else none
-  | .capture _ .nat :: rest, h, p :: ps => p.toNat?.bind (fun n => dispatch rest (h n) ps)
+  | .capture _ .nat :: rest, h, p :: ps =>
+    (Internal.parseNat? p).bind (fun n => dispatch rest (h n) ps)
   | .capture _ .string :: rest, h, p :: ps =>
     if unlinkable p then none else dispatch rest (h p) ps
   | _, _, _ => none

@@ -17,6 +17,8 @@ private def userHandler : HandlerType userPattern String :=
 
 #guard dispatch userPattern userHandler ["users", "42"] = some "user #42"
 #guard dispatch userPattern userHandler ["users", "notanumber"] = none
+#guard dispatch userPattern userHandler ["users", "042"] = none -- only the digits a link renders
+#guard dispatch userPattern userHandler ["users", "4_2"] = none
 #guard dispatch userPattern userHandler ["posts", "42"] = none          -- literal mismatch
 #guard dispatch userPattern userHandler ["users"] = none                -- too few path segments
 #guard dispatch userPattern userHandler ["users", "42", "extra"] = none -- too many path segments
